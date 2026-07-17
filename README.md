@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="hishare-icon.png" width="128" alt="HiShare icon">
+</p>
+
 # HiShare
 
 Native Haiku file-sharing and chat client — the modernized edition of the classic
