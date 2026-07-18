@@ -1,5 +1,35 @@
 # Changelog
 
+## HiShare 1.1-1 (July 2026)
+
+### Multi-server support
+
+HiShare can now be connected to up to **8 MUSCLE servers at once**:
+
+- **File → Connect to additional server…** opens a prompt for the server
+  address; the **Connections** submenu lists every connection with its state
+  and per-connection **Connect / Disconnect / Remove** actions.
+- Extra connections are **persisted** and re-created at the next startup;
+  "Connect" (menu, power button) brings every offline connection online.
+- **Queries** run on all connected servers and the results are aggregated;
+  a server that (re)connects while a query is live joins it immediately.
+- **Chat** is broadcast to every connected server; with more than one
+  connection, incoming chat is tagged with its server of origin
+  (`[servername]`), and private messages/pings go through the target user's
+  own server. Users are keyed per-connection, so identical session IDs on
+  different servers never collide.
+- **Transfers** are bound to their peer's server connection end-to-end:
+  downloads, connect-back requests, the connect-back retry fallback,
+  restarts, restored-from-archive transfers (the server is remembered by
+  name) and inbound uploads (bound when the peer identifies itself).
+- **Header banner** shows "Connected to N servers" with a per-server ✓/…/✗
+  tooltip; the status dot is green only when every connection is up.
+- A **Server column** appears automatically in the users and results lists
+  whenever more than one connection exists (and hides again at one).
+- Per-connection state and **auto-reconnect** (each connection retries with
+  its own backoff). A dropped connection takes only its own users and
+  results with it; single-server behaviour is unchanged throughout.
+
 ## HiShare 1.0-3 (July 2026)
 
 ### Networking
