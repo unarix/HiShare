@@ -88,6 +88,9 @@ public:
    // bind themselves to their peer's server connection once the peer identifies itself.
    ServerConnection * FindConnectionForSessionID(const char * sessionID) const;
 
+   // How many server connections currently exist (connected or not).
+   uint32 GetConnectionCount() const {return _connections.GetNumItems();}
+
    // When doing a lot of add/remove file items, it's best to
    // bracket your calls with these for, efficieny in updates the GUI.
    void BeginBatchFileResultUpdate();

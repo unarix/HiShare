@@ -705,7 +705,20 @@ MessageReceived(const MessageRef & msgRef)
          const char * session;
          bool isPrivate = msg->HasName("private");
          ShareWindow * win = (ShareWindow *) Looper();
-         if ((msg->FindString("text", &text) == B_NO_ERROR)&&(msg->FindString("session", &session) == B_NO_ERROR)) win->LogMessage(LOG_REMOTE_USER_CHAT_MESSAGE, text, session, isPrivate ? &win->GetColor(COLOR_PRIVATE) : NULL, isPrivate);
+         if ((msg->FindString("text", &text) == B_NO_ERROR)&&(msg->FindString("session", &session) == B_NO_ERROR))
+         {
+            // With several servers online, tag remote chat with its server of origin.
+            String taggedText;
+            if ((win->GetConnectionCount() > 1)&&(_owner))
+            {
+               taggedText  = "[";
+               taggedText += _owner->GetServerName();
+               taggedText += "] ";
+               taggedText += text;
+               text = taggedText();
+            }
+            win->LogMessage(LOG_REMOTE_USER_CHAT_MESSAGE, text, session, isPrivate ? &win->GetColor(COLOR_PRIVATE) : NULL, isPrivate);
+         }
       }
       break;
 

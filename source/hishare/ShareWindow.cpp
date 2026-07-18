@@ -5491,13 +5491,15 @@ SendOutMessageOrPing(const String & text, ChatWindow * optEchoTo, bool isPing)
             const char * sendText = iter.GetNextValue()->Cstr();
             const char * sid = user->GetSessionID();
 
-            if (isPing) 
+            // Targeted messages go through the target user's own server connection.
+            ShareNetClient * unc = user->GetConn() ? user->GetConn()->Client() : NetClient();
+            if (isPing)
             {
-               NetClient()->SendPing(sid);
+               unc->SendPing(sid);
                if (pinging.Length() > 0) pinging += ", ";
                pinging += sid;
             }
-            else NetClient()->SendChatMessage(user->GetSessionID(), sendText);
+            else unc->SendChatMessage(user->GetSessionID(), sendText);
 
             if ((isPing == false)&&((showAllTargets)||(first))) LogMessage(LOG_LOCAL_USER_CHAT_MESSAGE, sendText, user->GetSessionID(), NULL, (isPing==false), optEchoTo);
             first = false;
@@ -5916,7 +5918,9 @@ SendChatText(const String & t, ChatWindow * optEchoTo)
    else if (lowerText.Length() > 0)
    {
       const char * txt = text->Cstr()+(((lowerText.StartsWith("/me")==false)&&(lowerText[0]=='/'))?1:0);
-      NetClient()->SendChatMessage("*", txt);  // if started with double slash, remove escape
+      // Public chat is broadcast to every connected server.
+      for (uint32 cc=0; cc<_connections.GetNumItems(); cc++)
+         if (_connections[cc]->IsConnected()) _connections[cc]->Client()->SendChatMessage("*", txt);  // if started with double slash, remove escape
       LogMessage(LOG_LOCAL_USER_CHAT_MESSAGE, txt, NULL, NULL, false, optEchoTo);
    }
 }
