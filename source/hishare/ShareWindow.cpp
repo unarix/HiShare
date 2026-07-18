@@ -1384,6 +1384,11 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    (void)GetAppSubdir("shared", _shareDir, true);
    (void) AddConnection(NULL);  // the primary connection; its server name is set at connect time
 
+   // Re-create the extra server connections from the last session (they are
+   // brought online at startup only if "login on startup" is enabled).
+   const char * extraServer;
+   for (int32 xi=0; settingsMsg.FindString("extraserver", xi, &extraServer) == B_NO_ERROR; xi++) (void) AddConnection(extraServer);
+
    SetSizeLimits(MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT);
 
    _menuBar = new BMenuBar(BRect(), "Menu Bar");
@@ -2404,6 +2409,11 @@ GenerateSettingsMessage(BMessage & settingsMsg)
    for (int ol=0; ol<olLen; ol++) settingsMsg.AddString("onlogin", _onLoginStrings.GetItemAt(ol)->Cstr());
 
    settingsMsg.AddString("server", _serverEntry->Text());
+
+   // Extra (non-primary) server connections, re-created at the next startup.
+   for (uint32 sc=1; sc<_connections.GetNumItems(); sc++)
+      if (_connections[sc]->GetServerName().Length() > 0) settingsMsg.AddString("extraserver", _connections[sc]->GetServerName()());
+
    settingsMsg.AddBool("fulluserqueries", _fullUserQueries->IsMarked());
    settingsMsg.AddBool("shortestfirst", _shortestUploadsFirst->IsMarked());
    settingsMsg.AddBool("autoclear", _autoClearCompletedDownloads->IsMarked());
@@ -3974,6 +3984,18 @@ void ShareWindow :: MessageReceived(BMessage * msg)
       case SHAREWINDOW_COMMAND_RECONNECT_TO_SERVER:
          ResetAutoReconnectState(PrimaryConnection(), true);  // user intervened, so reset count
          ReconnectToServer(PrimaryConnection());
+
+         // "Connect" means "go online": also bring up any extra connection
+         // that has a server name but isn't online yet (e.g. at startup).
+         for (uint32 xc=1; xc<_connections.GetNumItems(); xc++)
+         {
+            ServerConnection * extra = _connections[xc];
+            if ((extra->IsConnected() == false)&&(extra->IsConnecting() == false)&&(extra->GetServerName().Length() > 0))
+            {
+               ResetAutoReconnectState(extra, true);
+               ReconnectToServer(extra);
+            }
+         }
       break;
 
       case SHAREWINDOW_COMMAND_CHANGE_FILE_NAME_QUERY:
@@ -6277,10 +6299,13 @@ void ShareWindow :: ReconnectToServer(ServerConnection * conn)
 {
    if (conn == NULL) return;
 
-   const char * server = _serverEntry->Text();
+   // The primary connection follows the server entry field; extra connections
+   // reconnect to their own stored server name.
+   if (conn == PrimaryConnection()) conn->SetServerName(_serverEntry->Text());
+   const String serverStr = conn->GetServerName();
+   const char * server = serverStr();
    if (server)
    {
-      conn->SetServerName(server);  // save this for later, when we're connected
       StringTokenizer tok(server, " :");
       const char * host = tok.GetNextToken();
       if (host)
