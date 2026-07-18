@@ -331,6 +331,8 @@ private:
 
    bool _queryEnabled;
    String _queryOnConnect;
+   String _currentQueryUserExp;   // the live query's expressions, kept so a freshly
+   String _currentQueryFileExp;   // (re)connected server can be subscribed to it too
 
    BButton * _enableQueryButton;
    BButton * _disableQueryButton;

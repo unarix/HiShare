@@ -4397,9 +4397,11 @@ SetQueryEnabled(bool e, bool putInQueryMenu)
          MakeRegexCaseInsensitive(fileExp);
 
          ClearResults();
-         NetClient()->StartQuery(userExp.Length() > 0 ? userExp() : "*", fileExp());
+         _currentQueryUserExp = (userExp.Length() > 0) ? userExp : String("*");
+         _currentQueryFileExp = fileExp;
+         for (uint32 qc=0; qc<_connections.GetNumItems(); qc++) _connections[qc]->Client()->StartQuery(_currentQueryUserExp(), _currentQueryFileExp());
       }
-      else NetClient()->StopQuery();
+      else for (uint32 qc=0; qc<_connections.GetNumItems(); qc++) _connections[qc]->Client()->StopQuery();
 
       UpdateQueryEnabledStatus();
    }
@@ -4581,6 +4583,8 @@ SetConnectStatus(ServerConnection * conn, bool isConnecting, bool isConnected)
          SetQuery(_queryOnConnect());
          _queryOnConnect = "";  // we only want to do this once!
       }
+      // If a query is already live, subscribe this (re)connected server to it too.
+      else if (_queryEnabled) conn->Client()->StartQuery(_currentQueryUserExp(), _currentQueryFileExp());
    }
    else if ((!wasConnecting)&&(isConnecting)) LogMessage(LOG_INFORMATION_MESSAGE, str(STR_CONNECTING_TO_SERVER_DOTDOTDOT));
    else if ((isConnecting == false)&&(isConnected == false))
