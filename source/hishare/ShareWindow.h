@@ -396,6 +396,7 @@ private:
    // this always holds exactly one element, so behaviour is unchanged; NetClient()
    // is a convenience accessor for that single connection's MUSCLE client.
    Queue<ServerConnection *> _connections;
+   int32 _nextConnID;   // next ID handed out by AddConnection(); never reused within a session
    ShareNetClient * NetClient() const {return _connections.IsEmpty() ? NULL : _connections.Head()->Client();}
    ServerConnection * PrimaryConnection() const {return _connections.IsEmpty() ? NULL : _connections.Head();}
 
@@ -477,6 +478,13 @@ private:
    bool AnyAutoReconnectPending() const;    // true iff any connection has a reconnect runner
    ServerConnection * FindConnectionByID(int32 connID) const;
    ServerConnection * FindConnectionByServerName(const char * serverName) const;  // case-insensitive; NULL if absent
+
+   // Dynamic connection management.  The window keeps at least one connection
+   // alive at all times (lots of code assumes NetClient() is non-NULL).
+   enum { MAX_SERVER_CONNECTIONS = 8 };
+   ServerConnection * AddConnection(const char * optServerName);  // NULL if already at MAX_SERVER_CONNECTIONS
+   void RemoveConnection(ServerConnection * conn);                // no-op on the last remaining connection
+   void RemoveUsersForConnection(ServerConnection * conn);        // drops its users (and their results)
 
    // Automatic router port forwarding (UPnP/NAT-PMP) lifecycle helpers.
    void StartPortMapper();

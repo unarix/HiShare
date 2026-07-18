@@ -1214,6 +1214,7 @@ static const BRect defaultPrivateRect(100,300,500,475);
 ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char * connectServer) :
    ChatWindow(BRect(WINDOW_START_X,WINDOW_START_Y,WINDOW_START_X+WINDOW_START_W,WINDOW_START_Y+WINDOW_START_H),"HiShare",B_TITLED_WINDOW_LOOK, B_NORMAL_WINDOW_FEEL,0L),
    _queryEnabled(false),
+   _nextConnID(0),
    _currentPage(0),
    _bytesShown(0LL),
    _defaultBitmap(BRect(0,0,15,15),B_COLOR_8_BIT,DefaultData,false,false),
@@ -1381,9 +1382,7 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
 
    // set up the net client: this is what talks to the MUSCLE server for us
    (void)GetAppSubdir("shared", _shareDir, true);
-   ServerConnection * conn = new ServerConnection(0, _shareDir, (_acceptThread.GetPort() > 0) ? (int32)_acceptThread.GetPort() : -1);
-   _connections.AddTail(conn);
-   AddHandler(conn->Client());
+   (void) AddConnection(NULL);  // the primary connection; its server name is set at connect time
 
    SetSizeLimits(MIN_WIDTH, MAX_WIDTH, MIN_HEIGHT, MAX_HEIGHT);
 
@@ -4570,14 +4569,15 @@ SetConnectStatus(ServerConnection * conn, bool isConnecting, bool isConnected)
 
    conn->SetConnectState(isConnecting, isConnected);
 
-   // If no connection is left, make sure the display is clear.
-   // TODO(multi-server): on a single connection's disconnect, remove only its
-   // users/results instead of waiting for the last connection to drop.
+   // If no connection is left, clear the whole display (single-connection
+   // behaviour, unchanged); otherwise a dropped connection takes just its
+   // own users - and thus their results - with it.
    if (IsConnected() == false)
    {
       ClearUsers();
       SetQueryEnabled(false);
    }
+   else if ((wasConnected)&&(isConnected == false)) RemoveUsersForConnection(conn);
 
    UpdateConnectStatus(true);
    UpdateQueryEnabledStatus();
@@ -4613,6 +4613,61 @@ FindConnectionForSessionID(const char * sessionID) const
 {
    const RemoteUserItem * user = FindUserBySessionID(sessionID);
    return user ? user->GetConn() : NULL;
+}
+
+ServerConnection *
+ShareWindow ::
+AddConnection(const char * optServerName)
+{
+   if (_connections.GetNumItems() >= MAX_SERVER_CONNECTIONS) return NULL;
+
+   ServerConnection * conn = new ServerConnection(_nextConnID++, _shareDir, (_acceptThread.GetPort() > 0) ? (int32)_acceptThread.GetPort() : -1);
+   if (optServerName) conn->SetServerName(optServerName);
+   _connections.AddTail(conn);
+   AddHandler(conn->Client());
+   return conn;
+}
+
+void
+ShareWindow ::
+RemoveConnection(ServerConnection * conn)
+{
+   if ((conn == NULL)||(_connections.IndexOf(conn) < 0)||(_connections.GetNumItems() <= 1)) return;
+
+   ResetAutoReconnectState(conn, true);
+   conn->Client()->DisconnectFromServer();
+
+   // Transfers bound to this connection can no longer restart or send
+   // connect-backs through it: abort the live ones and unbind them all.
+   for (int i=_transferList->CountItems()-1; i>=0; i--)
+   {
+      ShareFileTransfer * next = (ShareFileTransfer *) _transferList->ItemAt(i);
+      if (next->GetConn() == conn)
+      {
+         if (next->IsFinished() == false) next->AbortSession(true, true);
+         next->SetConn(NULL);
+      }
+   }
+
+   RemoveUsersForConnection(conn);
+
+   RemoveHandler(conn->Client());
+   (void) _connections.RemoveFirstInstanceOf(conn);
+   delete conn;
+
+   UpdateConnectStatus(true);
+}
+
+void
+ShareWindow ::
+RemoveUsersForConnection(ServerConnection * conn)
+{
+   // Collect the session IDs first: RemoveUser() mutates _users while we iterate.
+   Queue<String> doomed;
+   HashtableIterator<const char *, RemoteUserItem *> iter = _users.GetIterator();
+   RemoteUserItem * next;
+   while(iter.GetNextValue(next) == B_NO_ERROR) if (next->GetConn() == conn) (void) doomed.AddTail(next->GetSessionID());
+   for (uint32 i=0; i<doomed.GetNumItems(); i++) RemoveUser(conn, doomed[i]());
 }
 
 void
