@@ -4525,11 +4525,34 @@ UpdateTitleBar()
    if (_headerBanner)
    {
       const char * uname = (_userNameEntry && _userNameEntry->Text()[0]) ? _userNameEntry->Text() : "HiShare";
-      int state = IsConnected() ? 2 : (IsConnecting() ? 1 : 0);
+      // Count connection states so multi-server setups show an aggregate:
+      // green dot only when every connection is up, amber when partial.
+      uint32 numConnected = 0;
+      String connectedName, tip;
+      for (uint32 ci=0; ci<_connections.GetNumItems(); ci++)
+      {
+         ServerConnection * c = _connections[ci];
+         if (c->IsConnected()) { numConnected++; if (connectedName.Length() == 0) connectedName = c->GetServerName(); }
+         if (c->GetServerName().Length() > 0)
+         {
+            if (tip.Length() > 0) tip += "\n";
+            tip += c->GetServerName();
+            tip += c->IsConnected() ? "  \xE2\x9C\x93" : (c->IsConnecting() ? "  \xE2\x80\xA6" : "  \xE2\x9C\x97");  // ✓ / … / ✗
+         }
+      }
+
+      int state = (numConnected == _connections.GetNumItems()) && (numConnected > 0) ? 2 : ((numConnected > 0)||(IsConnecting()) ? 1 : 0);
       String sub;
-      if (IsConnected())      { sub = "Connected to "; sub += GetConnectedTo(); }
-      else if (IsConnecting()) sub = str(STR_CONNECTING_TO_SERVER_DOTDOTDOT);
-      else                    sub = "Not connected";
+      if (numConnected > 1)
+      {
+         char nbuf[64];
+         snprintf(nbuf, sizeof(nbuf), "Connected to %lu servers", (unsigned long) numConnected);
+         sub = nbuf;
+      }
+      else if (numConnected == 1) { sub = "Connected to "; sub += connectedName; }
+      else if (IsConnecting())     sub = str(STR_CONNECTING_TO_SERVER_DOTDOTDOT);
+      else                         sub = "Not connected";
+      _headerBanner->SetToolTip((_connections.GetNumItems() > 1) ? tip() : NULL);
       if ((NetClient())&&(_sharingEnabled)&&(GetFileSharingEnabled()))
       {
          char scbuf[48];
