@@ -85,8 +85,6 @@ void SplitPane::FrameResized(float w, float h){
 *   The main draw stuff here. basicly just the slider
 *******************************************************/
 void SplitPane::Draw(BRect /*f*/){
-   // Use the system shine/shadow colours so the splitter respects whatever
-   // the user configured in Appearance preferences.
    const rgb_color splitHilite     = ui_color(B_SHINE_COLOR);
    const rgb_color splitShadow     = ui_color(B_SHADOW_COLOR);
    const rgb_color splitDarkShadow = tint_color(splitShadow, B_DARKEN_1_TINT);

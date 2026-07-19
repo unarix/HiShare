@@ -1170,7 +1170,6 @@ void ChatWindow :: SetViewColor(BView * view, const rgb_color & c)
 void ChatWindow :: UpdateColors()
 {
    UpdateTextViewColors(_textEntry->TextView());
-   // Ensure the "Chat:" label of the BTextControl uses the system text colour.
    _textEntry->SetHighColor(GetColor(COLOR_TEXT));
    SetViewColor(_chatText, GetColor(IsScrollBarNearBottom() ? COLOR_BG : COLOR_SCROLLBG));
 

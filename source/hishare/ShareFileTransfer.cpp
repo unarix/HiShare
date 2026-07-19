@@ -1687,7 +1687,6 @@ DrawItem(BView * lv, BRect itemRect, bool /*complete*/)
 
       // Do border highlighting
       bool selected = IsSelected();
-      // Use system shine/shadow so the bevel respects the user's Appearance settings.
       const rgb_color bevelLight = ui_color(B_SHINE_COLOR);
       const rgb_color bevelDark  = ui_color(B_SHADOW_COLOR);
       doubleBufferView->SetHighColor(selected ? bevelDark : bevelLight);

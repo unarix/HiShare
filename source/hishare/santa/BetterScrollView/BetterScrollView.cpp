@@ -198,8 +198,6 @@ void BetterScrollView::UpdateScrollBars(bool scrolling_allowed)
 	{
 		rgb_color cur_color = m_scroll_view_corner->ViewColor();
 		rgb_color new_color;
-		// Always use the panel background so the corner blends with the
-		// surrounding chrome regardless of light/dark theme.
 		new_color = ui_color(B_PANEL_BACKGROUND_COLOR);
 		if(new_color.red != cur_color.red || new_color.green != cur_color.green ||
 			new_color.blue != cur_color.blue || new_color.alpha != cur_color.alpha)

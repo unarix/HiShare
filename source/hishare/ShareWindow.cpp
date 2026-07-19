@@ -1764,15 +1764,11 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
       contentView->AddChild(upperView);
 
       {
-         // Fill out the status view using Haiku's Layout API so the three
-         // groups (Server / User Name / Status) distribute evenly and resize
-         // with the window automatically.
          BRect statusViewFrame(0, 0, upperView->Bounds().Width(), upperView->Bounds().Height());
          _statusView = new BView(statusViewFrame, "StatusView", B_FOLLOW_ALL_SIDES, 0);
          _statusView->SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
          AddBorderView(_statusView);
 
-         // --- Server ---
          _serverMenu = new BMenu(str(STR_SERVER));
          _serverMenuField = new BMenuField(NULL, NULL, _serverMenu);
          AddBorderView(_serverMenuField);
@@ -1794,7 +1790,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          AddBorderView(_serverEntry);
          _serverEntry->SetTarget(toMe);
 
-         // --- User Name ---
          _userNameMenu = new BMenu(str(STR_USER_NAME_COLON));
          BMenuField * userNameMenuField = new BMenuField(NULL, NULL, _userNameMenu);
          AddBorderView(userNameMenuField);
@@ -1815,7 +1810,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          AddBorderView(_userNameEntry);
          _userNameEntry->SetTarget(toMe);
 
-         // --- Status ---
          String statusColon = str(STR_STATUS);
          statusColon += ':';
          _userStatusMenu = new BMenu(statusColon());
@@ -1843,7 +1837,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          AddBorderView(_userStatusEntry);
          _userStatusEntry->SetTarget(toMe);
 
-         // Build the layout: four equal columns; the last is empty space.
          BLayoutBuilder::Group<>(_statusView, B_HORIZONTAL, B_USE_DEFAULT_SPACING)
             .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING, 1.0f)
                .Add(_serverMenuField, 0.0f)
@@ -1871,49 +1864,40 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    AddBorderView(resultsView);
 
    {
-         // Fill out the query view
          BRect queryViewFrame(0, 0, resultsFrame.Width(), QUERY_VIEW_HEIGHT);
          _queryView = new BView(queryViewFrame, NULL, B_FOLLOW_LEFT_RIGHT | B_FOLLOW_TOP, 0);
+         _queryView->SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
          AddBorderView(_queryView);
          resultsView->AddChild(_queryView);
-         float extraMenuWidth = _queryView->StringWidth("MMMMM");
-         
+
          const char * q = str(STR_QUERY);
          _queryMenu = new BMenu(q);
-         float qw = _queryView->StringWidth(q)+extraMenuWidth;
-         _queryView->AddChild(AddBorderView(new BMenuField(
-            BRect(hMargin,4,qw,fontHeight), NULL, NULL, _queryMenu)));
-         
-         float right = queryViewFrame.Width()-hMargin;
-         float stringWidth = _queryMenu->StringWidth(str(STR_STOP_QUERY))+extraMenuWidth;
-         _disableQueryButton = new BButton(
-            BRect(right-stringWidth,3,right,fontHeight), NULL, str(STR_STOP_QUERY),
-             new BMessage(SHAREWINDOW_COMMAND_DISABLE_QUERY), B_FOLLOW_RIGHT | B_FOLLOW_TOP);
-         AddBorderView(_disableQueryButton);
-         _queryView->AddChild(_disableQueryButton);
-         right -= (stringWidth + hMargin);
-
-         stringWidth = _queryMenu->StringWidth(str(STR_START_QUERY))+extraMenuWidth;
-         _enableQueryButton = new BButton(
-            BRect(right-stringWidth,3,right,fontHeight), NULL, str(STR_START_QUERY),
-             new BMessage(SHAREWINDOW_COMMAND_ENABLE_QUERY), B_FOLLOW_RIGHT | B_FOLLOW_TOP);
-         AddBorderView(_enableQueryButton);
-         _queryView->AddChild(_enableQueryButton);
-         right -= (stringWidth + hMargin);
+         BMenuField * queryMenuField = new BMenuField(NULL, NULL, _queryMenu);
+         AddBorderView(queryMenuField);
 
          const char * startupQuery;
-         // Default search: Haiku software packages (BeShare is widely used as an .hpkg
-         // repo).  Only applies to fresh installs; a saved "query" setting wins.
          if (settingsMsg.FindString("query", &startupQuery) != B_NO_ERROR) startupQuery = "*.hpkg";
-         _fileNameQueryEntry = new BTextControl(
-            BRect(qw-10.0f,6,right,fontHeight), NULL, NULL, startupQuery,
-             new BMessage(SHAREWINDOW_COMMAND_CHANGE_FILE_NAME_QUERY), B_FOLLOW_ALL_SIDES);
+         _fileNameQueryEntry = new BTextControl(NULL, NULL, startupQuery,
+               new BMessage(SHAREWINDOW_COMMAND_CHANGE_FILE_NAME_QUERY));
          AddBorderView(_fileNameQueryEntry);
          _fileNameQueryEntry->SetTarget(toMe);
-         _queryView->AddChild(_fileNameQueryEntry);
-         // Restore any additional strings....
+
+         _enableQueryButton = new BButton(NULL, str(STR_START_QUERY),
+               new BMessage(SHAREWINDOW_COMMAND_ENABLE_QUERY));
+         AddBorderView(_enableQueryButton);
+
+         _disableQueryButton = new BButton(NULL, str(STR_STOP_QUERY),
+               new BMessage(SHAREWINDOW_COMMAND_DISABLE_QUERY));
+         AddBorderView(_disableQueryButton);
+
+         BLayoutBuilder::Group<>(_queryView, B_HORIZONTAL, B_USE_DEFAULT_SPACING)
+            .Add(queryMenuField, 0.0f)
+            .Add(_fileNameQueryEntry, 1.0f)
+            .Add(_enableQueryButton, 0.0f)
+            .Add(_disableQueryButton, 0.0f);
+
          const char * listQuery;
-         for (int qh=1; (settingsMsg.FindString("query", qh, &listQuery) == B_NO_ERROR); qh++) 
+         for (int qh=1; (settingsMsg.FindString("query", qh, &listQuery) == B_NO_ERROR); qh++)
          {
             BMessage * msg = new BMessage(SHAREWINDOW_COMMAND_CHANGE_FILE_NAME_QUERY);
             msg->AddString("query", listQuery);
@@ -6864,17 +6848,6 @@ void ShareWindow :: SetSplit(int which, int pos, bool isPercent, char dir)
 void ShareWindow :: FrameResized(float w, float h)
 {
    ChatWindow::FrameResized(w, h);
-
-   // Show or hide some of the less-necessary top-view controls so that things
-   // don't look too messy when the window has been made skinny
-
-   bool queryShouldBeHidden = (_fileNameQueryEntry->Bounds().Width() < 5.0f);
-   if (queryShouldBeHidden != _queryView->IsHidden())
-   {
-      if (queryShouldBeHidden) _queryView->Hide();
-                          else _queryView->Show();
-   }
-
 }
 
 };  // end namespace beshare

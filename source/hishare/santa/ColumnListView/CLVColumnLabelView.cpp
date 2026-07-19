@@ -31,8 +31,6 @@
 #include "Cursors.h"
 
 
-// Use the system shine/shadow colours directly so the column headers respect
-// whatever the user configured in Appearance preferences.
 static inline rgb_color HeaderHighlight() { return ui_color(B_SHINE_COLOR); }
 static inline rgb_color HeaderShadow()    { return ui_color(B_SHADOW_COLOR); }
 static inline rgb_color HeaderFocus()     { return ui_color(B_NAVIGATION_BASE_COLOR); }
