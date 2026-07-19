@@ -4629,7 +4629,11 @@ ShareWindow ::
 RefreshTransferItem(ShareFileTransfer * item)
 {
    int32 idx = _transferList->IndexOf(item);
-   if (idx >= 0) _transferList->InvalidateItem(idx);
+   if (idx >= 0)
+   {
+      item->DrawItem(_transferList, _transferList->ItemFrame(idx), true);
+      _transferList->Flush();
+   }
 }
 
 void
