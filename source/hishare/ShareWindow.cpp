@@ -3513,8 +3513,20 @@ void ShareWindow :: MessageReceived(BMessage * msg)
          BRow * row = NULL;
          while ((row = _resultsView->CurrentSelection(row)) != NULL)
             filelistMsg.AddPointer("item", row);
-         RequestDownloads(filelistMsg, _downloadsDir, NULL);
-         _resultsView->DeselectAll();
+         if (!filelistMsg.HasPointer("item", 0))
+         {
+            int32 idx;
+            for (int32 i = 0; msg->FindInt32("index", i, &idx) == B_NO_ERROR; i++)
+            {
+               BRow * r = _resultsView->RowAt(idx);
+               if (r) filelistMsg.AddPointer("item", r);
+            }
+         }
+         if (filelistMsg.HasPointer("item", 0))
+         {
+            RequestDownloads(filelistMsg, _downloadsDir, NULL);
+            _resultsView->DeselectAll();
+         }
          UpdateDownloadButtonStatus();
       }
       break;
@@ -4512,6 +4524,8 @@ void
 ShareWindow ::
 ClearResults()
 {
+   while (_resultsView->RowAt(0) != NULL)
+      _resultsView->RemoveRow(_resultsView->RowAt(0));
    HashtableIterator<const char *, RemoteUserItem *> iter = _users.GetIterator();
    RemoteUserItem * next;
    while(iter.GetNextValue(next) == B_NO_ERROR) next->ClearFiles();
