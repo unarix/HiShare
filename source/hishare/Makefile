@@ -87,6 +87,8 @@ else # not beos
       # Haiku muscle must be told the platform is 64-bit or its uintptr/pointer
       # handling truncates (the same flag the HaikuPorts recipe passes).
       CXXFLAGS += -D_BSD_SOURCE
+      CXXFLAGS += -I/boot/system/develop/headers/private
+      CXXFLAGS += -I/boot/system/develop/headers/private/interface
       # MUSCLE 6.11: IPv4-only ip_address (identical to the well-tested Phase-1
       # build).  NOTE: dropping this to enable IPv6 currently breaks connecting
       # to IPv4-only servers on Haiku (the IPv6 socket can't reach an IPv4 dest);

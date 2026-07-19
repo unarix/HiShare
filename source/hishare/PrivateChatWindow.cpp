@@ -1,8 +1,8 @@
 #include <stdio.h>
 
 #include <interface/ScrollBar.h>
-#include <interface/ScrollBar.h>
 #include <interface/ScrollView.h>
+#include <interface/Screen.h>
 #include <interface/Input.h>
 #include <interface/PopUpMenu.h>
 #include <interface/ColumnListView.h>
