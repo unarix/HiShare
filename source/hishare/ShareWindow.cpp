@@ -1843,20 +1843,21 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          AddBorderView(_userStatusEntry);
          _userStatusEntry->SetTarget(toMe);
 
-         // Build the layout: three equal groups separated by default spacing.
+         // Build the layout: four equal columns; the last is empty space.
          BLayoutBuilder::Group<>(_statusView, B_HORIZONTAL, B_USE_DEFAULT_SPACING)
-            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING, 1.0f)
                .Add(_serverMenuField, 0.0f)
                .Add(_serverEntry, 1.0f)
             .End()
-            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING, 1.0f)
                .Add(userNameMenuField, 0.0f)
                .Add(_userNameEntry, 1.0f)
             .End()
-            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING)
+            .AddGroup(B_HORIZONTAL, B_USE_SMALL_SPACING, 1.0f)
                .Add(userStatusMenuField, 0.0f)
                .Add(_userStatusEntry, 1.0f)
-            .End();
+            .End()
+            .AddGlue(1.0f);
 
          upperView->AddChild(_statusView);
       }
@@ -6874,20 +6875,6 @@ void ShareWindow :: FrameResized(float w, float h)
                           else _queryView->Show();
    }
 
-   bool serverShouldBeHidden = (_statusView->Frame().left < 5.0f);
-   if (serverShouldBeHidden != _serverMenuField->IsHidden())
-   {
-      if (serverShouldBeHidden) 
-      {
-         _serverMenuField->Hide();
-         _serverEntry->Hide();
-      }
-      else
-      {
-         _serverMenuField->Show();
-         _serverEntry->Show();
-      }
-   }
 }
 
 };  // end namespace beshare
