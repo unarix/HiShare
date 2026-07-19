@@ -145,7 +145,7 @@ HiShare : PortMapper.o ReflowingTextView.o ShareNetClient.o ServerConnection.o S
           SetupSystem.o String.o main.o SysLog.o AbstractMessageIOGateway.o \
           PulseNode.o MessageIOGateway.o PlainTextMessageIOGateway.o \
           PathMatcher.o QueryFilter.o ConvertMessages.o RemoteFileItem.o \
-          RemoteUserItem.o RemoteInfo.o ShareColumn.o ShareMIMEInfo.o \
+          RemoteUserItem.o RemoteInfo.o \
           NetworkUtilityFunctions.o SocketMultiplexer.o ShareUtils.o SplitPane.o md5.o \
           SignalHandlerSession.o SignalMultiplexer.o Directory.o FilePathInfo.o \
           MiscUtilityFunctions.o \

@@ -19,7 +19,6 @@
 #include "besupport/BThread.h"
 
 #include "PrefilledBitmap.h"
-#include "CLVListItem.h"
 
 #include "ShareConstants.h"
 #include "ChatWindow.h"
@@ -27,17 +26,12 @@
 #include "ServerConnection.h"
 #include "PortMapper.h"
 
-class ColumnListView;
-class CLVColumn;
-
 namespace beshare {
 
 class SplitPane;
 class ShareFileTransfer;
 class RemoteUserItem;
 class RemoteFileItem;
-class ShareColumn;
-class ShareMIMEInfo;
 class PrivateChatWindow;
 class TransferListView;
 class ColorPicker;
@@ -147,8 +141,8 @@ public:
 
    void SetQueryInProgress(ServerConnection * conn, bool qp);
 
-   int GetNumResultsPages() const {return _resultsPages.GetNumItems();}
-   int GetCurrentResultsPage() const {return _currentPage;}
+   int GetNumResultsPages() const {return 1;}
+   int GetCurrentResultsPage() const {return 0;}
 
    void SetEnableQuitRequester(bool e) {_enableQuitRequester = e;}
 
@@ -295,13 +289,8 @@ private:
    uint32 ParseRemoteIP(const char * addr) const;
    void RestartDownloadsFor(const RemoteUserItem * user);
 
-   static int CompareFunc(const CLVListItem* item1, const CLVListItem* item2, int32 sort_key);
-   int Compare(const RemoteFileItem * rf1, const RemoteFileItem * rf2, int32 sort_key) const;
-
    friend class RemoteUserItem; 
    friend class RemoteFileItem;
-   friend class ShareColumn;
-   friend class ShareMIMEInfo;
    friend class TransferListView;
 
    void LogStat(int statName, const char * statValue);
@@ -312,22 +301,16 @@ private:
    void RefreshFileItem(RemoteFileItem * item);
    void RefreshUserItem(RemoteUserItem * item);
 
-   const char * GetFileCellText(const RemoteFileItem * item, int32 columnIndex) const;
-   const BBitmap * GetBitmap(const RemoteFileItem * file, int32 columnIndex) const;
-
    void UpdateConnectStatus(bool updateTitleToo);
    void UpdateQueryEnabledStatus();
    void SetQueryEnabled(bool enabled, bool putInQueryMenu = true);
 
-   void ClearUsers();   // also clears results, as results are held by users
+   void ClearUsers();
    void ClearResults();
 
    BMenu * MakeLimitSubmenu(const BMessage & settingsMsg, uint32 code, const char * label, const char * fieldName, uint32 & var);
 
    void AddBandwidthOption(BMenu * qMenu, const char * label, int32 bps);
-
-   void CreateColumn(ShareMIMEInfo * optMIMEInfo, const char * columnName, bool remote);
-   ShareMIMEInfo * CacheMIMETypeInfo(const char * mimeString);
 
    void UpdateDownloadButtonStatus();
    void RequestDownloads(const BMessage & filelistMsg, const BDirectory & downloadDir, BPoint *droppoint);
@@ -348,7 +331,6 @@ private:
 
    BButton * _clearFinishedDownloadsButton;
    BButton * _requestDownloadsButton;
-   BButton * _requestInfoButton;
    BButton * _cancelTransfersButton;
 
    BMenu        * _queryMenu;
@@ -389,16 +371,13 @@ private:
    BMenuItem * _loginOnStartup;
    BMenuItem * _retainFilePaths;
    BMenuItem * _autoUpdateServers;
- 
+
    BMenu * _attribMenu;
 
    BMenuItem * _colorItem;
                
-   ColumnListView * _resultsView;
+   BColumnListView * _resultsView;
    BColumnListView * _usersView;
-
-   Queue<Hashtable<RemoteFileItem *, bool> * > _resultsPages;
-   uint32 _currentPage;
 
    int64 _bytesShown;
 
@@ -426,21 +405,12 @@ private:
 
    Hashtable<const char *, RemoteUserItem *> _users;
 
-   Hashtable<String, float> _activeAttribs;        /* attribs the user wants to see, and their widths */
-   Hashtable<const char *, ShareColumn *> _columns;        /* columns that are available */
-   Hashtable<const char *, BMenuItem *> _attribMenuItems;  /* toggles for available columns */
-   Hashtable<const char *, ShareMIMEInfo *> _mimeInfos;    /* cached MIME information */
-
-   Hashtable<ShareMIMEInfo *, bool> _emptyMimeInfos;       /* MIME infos that aren't in the BMenu yet */
-
    SplitPane * _resultsTransferSplit;
    SplitPane * _mainSplit;
    SplitPane * _chatUsersSplit;
 
    BView * _chatView;
    BView * _statusView;
-
-   BList _tempAddList;    // batch up items to be added, for efficiency
 
    uint32 CountActiveSessions(bool upload, const char * optForSession) const;
    uint32 CountUploadSessions() const;
@@ -457,8 +427,6 @@ private:
    void SaveSplitPane(BMessage & settingsMsg, const SplitPane * sp, const char * name) const;
 
    void ResetLayout();
-
-   void SortResults();
 
    void GenerateSettingsMessage(BMessage & msg);
 
@@ -522,15 +490,10 @@ private:
    void SendToPrivateChatWindows(BMessage & msg, const RemoteUserItem * user);
    void SendOutMessageOrPing(const String & text, ChatWindow * optEchoTo, bool isPing);
 
-   void DrawQueryInProgress(bool inProgress);  // draws the little animation, ooh!
-   void SwitchToPage(int page);   // sets the current page
-   void AddResultsItemList(const BList & list);
    void MakeAway();
 
    void UpdateLRUMenu(BMenu * menu, const char * lookfor, uint32 what, const char * fieldName, int maxSize, bool caseSensitive, uint32 maxLabelLen = ((uint32)-1));
    void RemoveLRUItem(BMenu * menu, const BMessage & msg);
-
-   void UpdatePagingButtons();
 
    uint64 IPBanTimeLeft(uint32 ip);  // returns number of microseconds left in the ban for ip, or 0 if not banned.
    void LogPattern(const char * preamble, const String & pattern, ChatWindow * optEchoTo);
@@ -545,9 +508,6 @@ private:
    void UpdatePrivateChatWindowsColors();
    MessageRef MakeBannedMessage(uint64 time, const MessageRef & optBase) const;
 
-   BButton * _prevPageButton;
-   BButton * _nextPageButton;
-
    uint32 _pageSize;
 
    int32 _language;
@@ -560,16 +520,11 @@ private:
    Queue<BMessage> _privateChatInfos;
    Hashtable<PrivateChatWindow *, String> _privateChatWindows;
    BMessage _attribPresets[10];
-   BMenuItem * _restorePresets[10];  // so we can enable them as necessary
-   BMessageRunner * _queryInProgressRunner;
+   BMenuItem * _restorePresets[10];
    String _ignorePattern;
    String _watchPattern;
    String _autoPrivPattern;
 
-   float _radarSweep;
-   bool _lastInProgress;
-
-   bool _firstUserDefinedAttribute;
    bool _enableQuitRequester;
 
    bool _idle;

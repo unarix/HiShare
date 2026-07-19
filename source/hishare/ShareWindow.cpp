@@ -39,9 +39,6 @@
 #include <translation/TranslatorRoster.h>
 #include <translation/TranslatorFormats.h>
 
-#include "ColumnListView.h"
-#include "CLVColumnLabelView.h"
-#include "CLVColumn.h"
 #include "SplitPane.h"
 #include "ShareApplication.h"
 #include "ShareStrings.h"
@@ -62,8 +59,6 @@
 #include "ShareNetClient.h"
 #include "ShareSettingsWindow.h"
 #include "ShareFileTransfer.h"
-#include "ShareColumn.h"
-#include "ShareMIMEInfo.h"
 #include "RemoteUserItem.h"
 #include "RemoteFileItem.h"
 #include "RemoteInfo.h"
@@ -409,241 +404,6 @@ static String RemoveSpecialQueryChars(const String & localString)
    return s;
 }
 
-class ResultsView : public ColumnListView
-{
-public:
-   ResultsView(uint32 replyWhat, BRect Frame, CLVContainerView** ContainerView, const char* Name = NULL, uint32 ResizingMode = B_FOLLOW_LEFT | B_FOLLOW_TOP, uint32 flags = B_WILL_DRAW | B_FRAME_EVENTS | B_NAVIGABLE, list_view_type Type = B_SINGLE_SELECTION_LIST, bool hierarchical = false, bool horizontal = true, bool vertical = true, bool scroll_view_corner = true, border_style border = B_NO_BORDER, const BFont* LabelFont = be_plain_font) : ColumnListView(Frame, ContainerView, Name, ResizingMode, flags, Type, hierarchical, horizontal, vertical, scroll_view_corner, border, LabelFont), _replyWhat(replyWhat)
-   {
-#if SAVE_BEOS
-      _sbe = NULL;
-      BResources * rsrc = be_app->AppResources();
-      if (rsrc)
-      {
-         size_t bitSize;
-         const void * bits = rsrc->LoadResource('PNG ', "beshare_320x200.png", &bitSize);
-         if (bits)
-         {
-            BMemoryIO mio(bits, bitSize);
-             _sbe = BTranslationUtils::GetBitmap(&mio);
-         }
-      }
-#endif
-   }
-
-   virtual ~ResultsView()
-   {
-#if SAVE_BEOS
-      delete _sbe;
-#endif
-   }
-
-   virtual void MouseDown(BPoint where)
-   {
-      BPoint pt;
-      uint32 buttons;
-
-      GetMouse(&pt, &buttons);
-      if (buttons & B_SECONDARY_MOUSE_BUTTON) 
-      {
-         int numPages = ((ShareWindow*)Window())->GetNumResultsPages();
-         if (numPages > 1)
-         {
-            int currentPage = ((ShareWindow*)Window())->GetCurrentResultsPage();
-            BPopUpMenu * popup = new BPopUpMenu((const char *)NULL);
-            for (int i=0; i<numPages; i++)
-            {
-               char temp[128];
-               sprintf(temp, "%s %i", str(STR_SWITCH_TO_PAGE), i+1);
-               BMessage * msg = new BMessage(_replyWhat);
-               msg->AddInt32("page", i);
-               BMenuItem * mi = new BMenuItem(temp, msg);
-               mi->SetEnabled(i != currentPage);
-               popup->AddItem(mi);
-            }
-            ConvertToScreen(&pt);
-            BMenuItem * result = popup->Go(pt);
-            if (result) Window()->PostMessage(result->Message());
-            delete popup;
-            return;
-         }
-      }
-      else ColumnListView::MouseDown(where);
-   }
-
-   bool InitiateDrag(BPoint /*point*/, int32 /*index*/, bool /*wasSelected*/)
-   {
-      BMessage dragMessage(B_SIMPLE_DATA);
-      BMessage dragData;
-      BRect rect;
-      BRect bounds = Bounds();
-
-      dragMessage.AddInt32("be:actions", B_MOVE_TARGET);
-      dragMessage.AddString("be:types", B_FILE_MIME_TYPE);
-
-      for(int i=0;;i++)
-      {
-         int32 selindex = CurrentSelection(i);
-         if (selindex < 0) break;
-
-         const RemoteFileItem * item = (const RemoteFileItem *)ItemAt(selindex);
-         dragData.AddPointer("item", item);
-         // For each item, we also add a 'URL' that fully describes the file
-         // The URL is of the form:
-         //     beshare://UserIP:UserPort/InstallID@BeShareServer/filename
-         // The idea is that an application that understands this format will
-         // first try UserIP and UserPort to set up a direct connection, and
-         // if that doesn't work (because the remote user is firewalled for
-         // example), can use InstallID and BeShareServer to set up a callback
-         // session.  -- marco
-
-         RemoteUserItem * owner = item->GetOwner();
-         uint64 ID = owner->GetInstallID();
-         char strbuf[17];
-         sprintf(strbuf,"%Lx", (long long unsigned int) ID);
-
-         String URL;
-         URL << "beshare://" 
-             << owner->GetHostName() << ":" << ((owner->GetFirewalled()) ? 0 : owner->GetPort())
-             << "/" << strbuf << "@" << ((ShareWindow*)Window())->GetConnectedTo()
-             << "/" << item->GetFileName();
-         dragMessage.AddString("be:url", URL());
-
-         BRect itemrect = ItemFrame(selindex);
-         if (itemrect.Intersects(bounds))
-         {
-            if (itemrect.IsValid())
-            {
-               if (rect.IsValid()) rect = rect | itemrect;
-                              else rect = itemrect;
-            }
-         }
-      }
-
-      // Let's also put in a BeShare-friendly link-text, in case 
-      // the user drops the Message back into BeShare, again.
-      {
-         String ownerString, fileString, humanReadableString = "[";
-         for(int j=0;;j++)
-         {
-            int32 selindex = CurrentSelection(j);
-            if (selindex < 0) break;
-
-            const RemoteFileItem * item = (const RemoteFileItem *)ItemAt(selindex);
-            if (humanReadableString.Length() > 1) humanReadableString += ", ";
-            humanReadableString += item->GetFileName();
-            fileString += (fileString.Length() == 0) ? "beshare:" : ",";
-
-            String fn(item->GetFileName());
-            EscapeRegexTokens(fn);
-
-            fileString += RemoveSpecialQueryChars(fn);
-            if (ownerString.Length() > 0) ownerString += ',';
-            ownerString += RemoveSpecialQueryChars(item->GetOwner()->GetSessionID());
-         }
-         if (fileString.Length() > 0)
-         {
-            if (ownerString.Length() > 0) fileString += ownerString.Prepend("@");
-            dragMessage.AddString("beshare:link", fileString());
-
-            humanReadableString += ']';
-            dragMessage.AddString("beshare:desc", humanReadableString());
-         }
-      }
-
-      dragMessage.AddMessage("be:originator-data", &dragData);
-      if (rect.IsValid()) DragMessage(&dragMessage, rect, Window());
-
-      return true;
-   }
-
-
-   // Empty-state: a muted, centered hint when there are no results, so the (large)
-   // file list doesn't read as a blank white box.  The Add/Remove overrides below
-   // repaint on the empty<->non-empty boundary.  (Also draws the SAVE_BEOS splash.)
-   virtual void Draw(BRect ur)
-   {
-#if SAVE_BEOS
-      if ((_sbe)&&(CountItems() == 0)) DrawBitmapAsync(_sbe, ur, ur);
-#endif
-      ColumnListView::Draw(ur);
-      if (CountItems() == 0)
-      {
-         BRect b = Bounds();
-         BFont f(be_plain_font); f.SetSize(f.Size() + 1.0f); SetFont(&f);
-         font_height fh; f.GetHeight(&fh);
-         SetHighColor(HeaderBanner::Blend(ui_color(B_LIST_ITEM_TEXT_COLOR), ui_color(B_LIST_BACKGROUND_COLOR), 0.58f));
-         SetLowColor(ViewColor());
-         const char * msg = "No files to show \xE2\x80\x94 connect and run a query";
-         float tw = f.StringWidth(msg);
-         DrawString(msg, BPoint((b.left + b.right - tw) / 2.0f, (b.top + b.bottom) / 2.0f + (fh.ascent - fh.descent) / 2.0f));
-      }
-   }
-
-   virtual bool AddItem(BListItem *item)
-   {
-      bool ret = ColumnListView::AddItem(item);
-      if ((ret)&&(CountItems() == 1)) Invalidate();
-      return ret;
-   }
-
-   virtual bool AddItem(BListItem *item, int32 atIndex)
-   {
-      bool ret = ColumnListView::AddItem(item, atIndex);
-      if ((ret)&&(CountItems() == 1)) Invalidate();
-      return ret;
-   }
-
-   virtual bool AddList(BList *newItems)
-   {
-      bool inv = (CountItems() == 0);
-      bool ret = ColumnListView::AddList(newItems);
-      if ((ret)&&(inv)) Invalidate();
-      return ret;
-   }
-
-   virtual bool AddList(BList *newItems, int32 atIndex)
-   {
-      bool inv = (CountItems() == 0);
-      bool ret = ColumnListView::AddList(newItems, atIndex);
-      if ((ret)&&(inv)) Invalidate();
-      return ret;
-   }
-
-   bool RemoveItem(BListItem *item)
-   {
-      bool ret = ColumnListView::RemoveItem(item);
-      if ((ret)&&(CountItems() == 0)) Invalidate();
-      return ret;
-   }
-
-   BListItem *RemoveItem(int32 index)
-   {
-      BListItem * ret = ColumnListView::RemoveItem(index);
-      if ((ret)&&(CountItems() == 0)) Invalidate();
-      return ret;
-   }
-
-   bool RemoveItems(int32 index, int32 count)
-   {
-      bool ret = ColumnListView::RemoveItems(index, count);
-      if ((ret)&&(CountItems() == 0)) Invalidate();
-      return ret;
-   }
-
-   void MakeEmpty()
-   {
-      bool inv = (CountItems() == 0);
-      ColumnListView::MakeEmpty();
-      if (inv) Invalidate();
-   }
-
-private:
-   uint32 _replyWhat;
-
-#if SAVE_BEOS
-   BBitmap * _sbe;
-#endif
-};
 
 // Any servers in this list will *always* be added to the server menu on startup.
 // Most servers need not be listed here, as the auto-server-updater-thingy will
@@ -686,7 +446,7 @@ static const char * _defaultServers[] =
 #define FILE_SESSION_COLUMN_NAME    str(STR_SESSIONID_KEY)
 #define FILE_OWNER_BANDWIDTH_NAME   str(STR_CONNECTION_KEY)
 #define FILE_MODIFICATION_TIME_NAME str(STR_MODIFICATION_TIME)
-#define FILE_OWNER_SERVER_NAME      "\0015Server"   // ShareColumn::ATTR_OWNERSERVER special column
+#define FILE_OWNER_SERVER_NAME      "\0015Server"
 
 #define DEFAULT_COLUMN_WIDTH 40.0f
 
@@ -1147,7 +907,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    _queryEnabled(false),
    _nextConnID(0),
    _connectionsMenu(NULL),
-   _currentPage(0),
    _bytesShown(0LL),
    _defaultBitmap(BRect(0,0,15,15),B_COLOR_8_BIT,DefaultData,false,false),
    _maxSimultaneousUploadSessions(5),
@@ -1160,10 +919,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    _languageSet(false),
    _lastPrivateMessageTarget(""),
    _messageWasSentToPrivateChatWindow(false),
-   _queryInProgressRunner(NULL),
-   _radarSweep(0.0f),
-   _lastInProgress(false),
-   _firstUserDefinedAttribute(true),
    _enableQuitRequester(true),
    _idle(false),
    _idleTimeoutMinutes(0),
@@ -1260,32 +1015,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    const char * pat;
    if (settingsMsg.FindString("watchpattern", &pat)    == B_NO_ERROR) _watchPattern    = pat;
    if (settingsMsg.FindString("autoprivpattern", &pat) == B_NO_ERROR) _autoPrivPattern = pat;
-
-   // Recall our "active columns" from the settings message
-   BMessage columnsSubMessage;
-   if (settingsMsg.FindMessage("columns", &columnsSubMessage) == B_NO_ERROR)
-   {
-#if B_BEOS_VERSION_DANO
-      const char * name;
-#else
-      char * name;
-#endif
-      type_code type;
-      int32 count;
-      for (int32 i=0; (columnsSubMessage.GetInfo(B_FLOAT_TYPE, i, &name, &type, &count) == B_NO_ERROR); i++)
-      {
-         float width;
-         if (columnsSubMessage.FindFloat(name, &width) == B_NO_ERROR) _activeAttribs.Put(name, width);
-      }
-   }
-   else
-   {
-      // Put default columns here (size, name, owner, ?)
-      _activeAttribs.Put(FILE_NAME_COLUMN_NAME, 330.0f);
-      _activeAttribs.Put(FILE_OWNER_COLUMN_NAME, 100.0f);
-      _activeAttribs.Put("beshare:File Size", 60.0f);
-      _activeAttribs.Put("beshare:Info", 240.0f);   // show the file description ("Info") by default
-   }
 
    // The directory to download files to
    (void)GetAppSubdir("downloads", _downloadsDir, true);
@@ -1597,13 +1326,13 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    // Modern status header (LocalSend-style): sits between the menu bar and the
    // classic content area.  Inserting it as a sibling above contentView keeps all
    // of contentView's manual-coordinate children untouched (its Bounds still start
-   // at 0,0) — we only push its top down by the banner height.
+   // at 0,0) Ã¢â‚¬â€ we only push its top down by the banner height.
    float chromeTop = _menuBar->Bounds().Height() + 1.0f;
    _headerBanner = new HeaderBanner(BRect(0, chromeTop, Bounds().right, chromeTop + HEADER_BANNER_HEIGHT));
    AddChild(_headerBanner);
 
    // Quick-action buttons live INSIDE the header band, right-aligned just before the
-   // status dot/label — so the global actions (Connect/Disconnect, Settings, Colours)
+   // status dot/label Ã¢â‚¬â€ so the global actions (Connect/Disconnect, Settings, Colours)
    // that otherwise live only in menus are one click away, with no extra toolbar row.
    // Context buttons (query/download/remove) stay where they are, next to what they act on.
    {
@@ -1785,21 +1514,24 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          }
       }
 
-      CLVContainerView* resultsContainerView;
-   _resultsView = new ResultsView(SHAREWINDOW_COMMAND_SWITCH_TO_PAGE,
-     BRect(hMargin, vMargin+QUERY_VIEW_HEIGHT, resultsView->Bounds().Width()-(B_V_SCROLL_BAR_WIDTH+2),
-      resultsView->Bounds().Height()-(vMargin+fontHeight+B_H_SCROLL_BAR_HEIGHT+8)),
-      &resultsContainerView, NULL,
-       B_FOLLOW_ALL_SIDES, B_WILL_DRAW|B_FRAME_EVENTS|B_NAVIGABLE,B_MULTIPLE_SELECTION_LIST,
-       false,true,true,true,B_FANCY_BORDER);
-   AddBorderView(resultsContainerView);
-   _resultsView->SetSortFunction((CLVCompareFuncPtr) CompareFunc);
-   _resultsView->SetTarget(toMe);
+   _resultsView = new BColumnListView(
+      BRect(hMargin, vMargin+QUERY_VIEW_HEIGHT, resultsView->Bounds().Width()-2,
+      resultsView->Bounds().Height()-(vMargin+fontHeight+8)),
+      NULL, B_FOLLOW_ALL_SIDES, B_WILL_DRAW|B_FRAME_EVENTS|B_NAVIGABLE, B_FANCY_BORDER);
+   _resultsView->SetSelectionMode(B_MULTIPLE_SELECTION_LIST);
+   _resultsView->SetSortingEnabled(true);
    _resultsView->SetSelectionMessage(new BMessage(SHAREWINDOW_COMMAND_RESULT_SELECTION_CHANGED));
    _resultsView->SetInvocationMessage(new BMessage(SHAREWINDOW_COMMAND_BEGIN_DOWNLOADS));
-   resultsView->AddChild(resultsContainerView);
+   _resultsView->SetTarget(toMe);
+   AddBorderView(_resultsView);
+   resultsView->AddChild(_resultsView);
 
-   _resultsView->AddColumn(new CLVColumn("", 20.0f, CLV_LOCK_AT_BEGINNING | CLV_NOT_MOVABLE | CLV_NOT_RESIZABLE));
+   _resultsView->AddColumn(new BStringColumn("File", 200, 50, 800, B_TRUNCATE_END), FILE_RESULT_COLUMN_FILENAME);
+   _resultsView->AddColumn(new BStringColumn(str(STR_FILE_SIZE), 80, 40, 200, B_TRUNCATE_END, B_ALIGN_RIGHT), FILE_RESULT_COLUMN_SIZE);
+   _resultsView->AddColumn(new BStringColumn(str(STR_NAME), 120, 50, 400, B_TRUNCATE_END), FILE_RESULT_COLUMN_USER);
+   _resultsView->AddColumn(new BStringColumn(str(STR_CONNECTION_KEY)+2, 100, 40, 300, B_TRUNCATE_END), FILE_RESULT_COLUMN_CONNECTION);
+   _resultsView->AddColumn(new BStringColumn(str(STR_PATH), 150, 50, 600, B_TRUNCATE_END), FILE_RESULT_COLUMN_PATH);
+   _resultsView->SetSortColumn(_resultsView->ColumnAt(FILE_RESULT_COLUMN_FILENAME), true, true);
 
    const float buttonBarHeight = fontHeight + vMargin + 2;
    BRect buttonBarFrame(0, resultsView->Bounds().Height() - buttonBarHeight, resultsView->Bounds().Width(), resultsView->Bounds().Height());
@@ -1808,27 +1540,15 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    AddBorderView(dlButtonView);
    resultsView->AddChild(dlButtonView);
 
-   _prevPageButton = new BButton(NULL, "<", new BMessage(SHAREWINDOW_COMMAND_PREVIOUS_PAGE));
-   AddBorderView(_prevPageButton);
-
-   _requestInfoButton = new BButton(NULL, "Information", new BMessage(SHAREWINDOW_COMMAND_REQUEST_INFO));
-   AddBorderView(_requestInfoButton);
-
    _requestDownloadsButton = new BButton(NULL, str(STR_DOWNLOAD_SELECTED_FILES), new BMessage(SHAREWINDOW_COMMAND_BEGIN_DOWNLOADS));
    AddBorderView(_requestDownloadsButton);
 
    _clearFinishedDownloadsButton = new BButton(NULL, str(STR_CLEAR_FINISHED_FAILED_TRANSFERS), new BMessage(SHAREWINDOW_COMMAND_CLEAR_FINISHED_DOWNLOADS));
    AddBorderView(_clearFinishedDownloadsButton);
 
-   _nextPageButton = new BButton(NULL, ">", new BMessage(SHAREWINDOW_COMMAND_NEXT_PAGE));
-   AddBorderView(_nextPageButton);
-
    BLayoutBuilder::Group<>(dlButtonView, B_HORIZONTAL, B_USE_SMALL_SPACING)
-      .Add(_prevPageButton, 0.0f)
-      .Add(_requestInfoButton, 0.0f)
       .Add(_requestDownloadsButton, 1.0f)
-      .Add(_clearFinishedDownloadsButton, 0.0f)
-      .Add(_nextPageButton, 0.0f);
+      .Add(_clearFinishedDownloadsButton, 0.0f);
 
    BRect transferFrame(resultsFrame.right+hMargin, resultsFrame.top+3, middleFrame.Width()-hMargin, middleFrame.bottom-30);
    BView * transferView = new BView(transferFrame, NULL, B_FOLLOW_RIGHT | B_FOLLOW_TOP_BOTTOM, 0);
@@ -1946,18 +1666,6 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
    UpdateConnectStatus(true);
    UpdateQueryEnabledStatus();
 
-   // Columns that we know will available for any file we can put up right away
-   CreateColumn(NULL, FILE_NAME_COLUMN_NAME,       false);
-   CreateColumn(NULL, "beshare:File Size",         false);
-   CreateColumn(NULL, "beshare:Kind",              false);
-   CreateColumn(NULL, "beshare:Info",              false);   // file description column, shown by default
-   CreateColumn(NULL, FILE_OWNER_COLUMN_NAME,      false);
-   CreateColumn(NULL, FILE_OWNER_BANDWIDTH_NAME,   false);
-   CreateColumn(NULL, FILE_SESSION_COLUMN_NAME,    false);
-   CreateColumn(NULL, FILE_OWNER_SERVER_NAME,      false);
-   CreateColumn(NULL, "beshare:Modification Time", false);
-   CreateColumn(NULL, "beshare:Path",              false);
-
    // tell the ReflowingTextView how to send us querychange messages when "beshare://" is clicked
    BMessage qMsg(SHAREWINDOW_COMMAND_CHANGE_FILE_NAME_QUERY);
    qMsg.AddBool("activate", true);
@@ -1985,8 +1693,7 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
 
    if ((connectServer)||(_loginOnStartup->IsMarked())) PostMessage(SHAREWINDOW_COMMAND_RECONNECT_TO_SERVER);
 
-   UpdateServerColumnVisibility();  // extra connections may have been restored from settings
-   UpdatePagingButtons();
+   UpdateServerColumnVisibility();
 
    // Restore attribute presets
    {
@@ -2204,19 +1911,11 @@ ShareWindow :: ~ShareWindow()
    _checkServerListThread.ShutdownInternalThread();
    _acceptThread.ShutdownInternalThread();
 
-   delete _queryInProgressRunner;
-   _queryInProgressRunner = NULL;
-
    delete _connectionReaper;
    _connectionReaper = NULL;
 
-   // delete MIME infos that aren't part of our menu hierarchy (the ones in the menu will be deleted by the BMenu)
-   ShareMIMEInfo * mi;
-   HashtableIterator<ShareMIMEInfo *, bool> miter = _emptyMimeInfos.GetIterator();
-   while(miter.GetNextKey(mi) == B_NO_ERROR) delete mi;
-
    BMessage temp;
-   GenerateSettingsMessage(temp);  // _settingMsg is saved to disk by the application object later (we are only holding a reference to it)
+   GenerateSettingsMessage(temp);
    if (AreMessagesEqual(temp, _stateMessage) == false) ((ShareApplication*)be_app)->SaveSettings(temp);
 
    // Close all private chat windows
@@ -2355,20 +2054,6 @@ GenerateSettingsMessage(BMessage & settingsMsg)
 
    BRect windowpos = Frame();
    settingsMsg.AddRect("windowpos", windowpos);
-
-   BMessage columnsSubMessage;
-   HashtableIterator<String, float> colIter = _activeAttribs.GetIterator();
-   const String * nextString;
-   while((nextString = colIter.GetNextKey()) != NULL) 
-   {
-      float width = *colIter.GetNextValue();  // default width in case we can't find the column itself for some reason
-      float colWidth = 0.0f;
-
-      ShareColumn * sc;
-      if (_columns.Get(nextString->Cstr(), sc) == B_NO_ERROR) colWidth = sc->Width();
-      columnsSubMessage.AddFloat(nextString->Cstr(), (colWidth > 0.0f) ? colWidth : width);
-   }
-   settingsMsg.AddMessage("columns", &columnsSubMessage);
 
    SaveUserColumn(settingsMsg, STR_NAME,           _usersView->ColumnAt(0));
    SaveUserColumn(settingsMsg, STR_STATUS,         _usersView->ColumnAt(1));
@@ -2590,30 +2275,27 @@ RequestDownloads(const BMessage & filelistMsg, const BDirectory & downloadDir, B
    RemoteFileItem * item;
    for (int32 i=0; (filelistMsg.FindPointer("item", i, (void **)&item) == B_NO_ERROR); i++)
    {
-      if(_resultsView->HasItem(item))
+      RemoteUserItem * owner = item->GetOwner();
+      if ((owner->GetHostName()[0])&&((owner->GetPort() > 0)||(owner->GetFirewalled())))
       {
-         RemoteUserItem * owner = item->GetOwner();
-         if ((owner->GetHostName()[0])&&((owner->GetPort() > 0)||(owner->GetFirewalled())))
+         ShareFileTransfer * xfer;
+         if (newTransferSessions.Get(owner, xfer) == B_ERROR)
          {
-            ShareFileTransfer * xfer;
-            if (newTransferSessions.Get(owner, xfer) == B_ERROR)
-            {
-               ServerConnection * ownerConn = owner->GetConn() ? owner->GetConn() : PrimaryConnection();
-               xfer = new ShareFileTransfer(downloadDir, (ownerConn ? ownerConn->Client() : NetClient())->GetLocalSessionID(), owner->GetInstallID(), owner->GetSupportsPartialHash() ? NUM_PARTIAL_HASH_BYTES : 0, _maxDownloadRate);
-               xfer->SetConn(ownerConn);
-               AddHandler(xfer);
-               newTransferSessions.Put(owner, xfer);
-            }
-            xfer->AddRequestedFileName(item->GetFileName(), 0LL, _retainFilePaths->IsMarked() ? item->GetPath() : "", droppoint);
-            if (droppoint) droppoint->y += 50;
+            ServerConnection * ownerConn = owner->GetConn() ? owner->GetConn() : PrimaryConnection();
+            xfer = new ShareFileTransfer(downloadDir, (ownerConn ? ownerConn->Client() : NetClient())->GetLocalSessionID(), owner->GetInstallID(), owner->GetSupportsPartialHash() ? NUM_PARTIAL_HASH_BYTES : 0, _maxDownloadRate);
+            xfer->SetConn(ownerConn);
+            AddHandler(xfer);
+            newTransferSessions.Put(owner, xfer);
          }
-         else 
-         {
-            String errStr(str(STR_CANT_DOWNLOAD_FROM_USER));
-            errStr += owner->GetDisplayHandle();
-            errStr += str(STR_COMMA_NO_CONNECTION_INFORMATION_AVAILABLE);
-            LogMessage(LOG_ERROR_MESSAGE, errStr());
-         }
+         xfer->AddRequestedFileName(item->GetFileName(), 0LL, _retainFilePaths->IsMarked() ? item->GetPath() : "", droppoint);
+         if (droppoint) droppoint->y += 50;
+      }
+      else 
+      {
+         String errStr(str(STR_CANT_DOWNLOAD_FROM_USER));
+         errStr += owner->GetDisplayHandle();
+         errStr += str(STR_COMMA_NO_CONNECTION_INFORMATION_AVAILABLE);
+         LogMessage(LOG_ERROR_MESSAGE, errStr());
       }
    }
 
@@ -2851,65 +2533,12 @@ void ShareWindow :: OpenTrackerFolder(const BDirectory & dir)
 void ShareWindow :: SaveAttributesPreset(BMessage & saveMsg)
 {
    saveMsg.MakeEmpty();
-
-   saveMsg.what = 1;  // signal that we have a valid config
-
-   int numColumns = _resultsView->CountColumns();
-   if (numColumns > 0)
-   {
-      {
-         int32 * displayOrder = new int32[numColumns];
-         _resultsView->GetDisplayOrder(displayOrder);
-         for (int di=1; di<numColumns; di++)
-         {
-            ShareColumn * col = (ShareColumn *) _resultsView->ColumnAt(displayOrder[di]);
-            saveMsg.AddString("attrib", col->GetAttributeName());
-            saveMsg.AddFloat("width", col->Width());
-         }
-         delete [] displayOrder;
-      }
-      {
-         int32 * sortKeys = new int32[numColumns];
-         CLVSortMode * sortModes = new CLVSortMode[numColumns];
-         int32 numSortKeys = _resultsView->GetSorting(sortKeys, sortModes);
-         for (int ds=0; ds<numSortKeys; ds++)
-         {
-            saveMsg.AddInt32("sortkey", sortKeys[ds]);
-            saveMsg.AddInt32("sortmode", (int32)sortModes[ds]);
-         }
-         delete [] sortKeys;
-         delete [] sortModes;
-      }
-   }
+   saveMsg.what = 1;
 }
 
 void ShareWindow :: RestoreAttributesPreset(const BMessage & restoreMsg)
 {
-   // Clear all existing columns....
-   for (int32 i=_resultsView->CountColumns()-1; i>=1; i--)
-   {
-      BMessage remMsg(SHAREWINDOW_COMMAND_TOGGLE_COLUMN);
-      remMsg.AddString("attrib", ((ShareColumn*)_resultsView->ColumnAt(i))->GetAttributeName());
-      PostMessage(&remMsg);
-   }
-
-   // And then add the saved ones
-   const char * addColName;
-   for (int32 j=0; restoreMsg.FindString("attrib", j, &addColName) == B_NO_ERROR; j++)
-   {
-      float width;
-      if (restoreMsg.FindFloat("width", j, &width) != B_NO_ERROR) width = 70.0f;
-      
-      BMessage addMsg(SHAREWINDOW_COMMAND_TOGGLE_COLUMN);
-      addMsg.AddString("attrib", addColName);
-      addMsg.AddFloat("width", width);
-      PostMessage(&addMsg);
-   }
-
-   // After all new columns are added, then restore the saved sorting prefs
-   BMessage sortMsg(restoreMsg);
-   sortMsg.what = SHAREWINDOW_COMMAND_RESTORE_SORTING;
-   PostMessage(&sortMsg);
+   (void) restoreMsg;
 }
 
 MessageRef ShareWindow :: MakeBannedMessage(uint64 time, const MessageRef & optBase) const
@@ -3069,14 +2698,6 @@ void ShareWindow :: MessageReceived(BMessage * msg)
       break;
 
       case SHAREWINDOW_COMMAND_SWITCH_TO_PAGE:
-      {
-         int32 page;
-         if (msg->FindInt32("page", &page) == B_NO_ERROR) 
-         {
-            SwitchToPage(page);
-            UpdateTitleBar();  
-         }
-      }
       break;
 
       case SHAREWINDOW_COMMAND_SET_PAGE_SIZE:
@@ -3112,17 +2733,12 @@ void ShareWindow :: MessageReceived(BMessage * msg)
       break;
 
       case SHAREWINDOW_COMMAND_PREVIOUS_PAGE:
-         SwitchToPage(((int)_currentPage)-1);
-         UpdateTitleBar();
       break;
 
       case SHAREWINDOW_COMMAND_NEXT_PAGE:
-         SwitchToPage(_currentPage+1);
-         UpdateTitleBar();
       break;
 
       case SHAREWINDOW_COMMAND_QUERY_IN_PROGRESS_ANIM:
-         DrawQueryInProgress(_queryInProgressRunner != NULL);
       break;
 
       case SHAREWINDOW_COMMAND_SAVE_ATTRIBUTE_PRESET:
@@ -3150,21 +2766,6 @@ void ShareWindow :: MessageReceived(BMessage * msg)
       break;
 
       case SHAREWINDOW_COMMAND_RESTORE_SORTING:
-      {
-         int32 numColumns = _resultsView->CountColumns();
-         int32 * sortKeys = new int32[numColumns];
-         CLVSortMode * sortModes = new CLVSortMode[numColumns];
-         int32 numSortKeys = 0;
-         for (int i=0; ((i<numColumns)&&(msg->FindInt32("sortkey", i, &sortKeys[i]) == B_NO_ERROR)); i++)
-         {
-            int32 temp;
-            sortModes[i] = (msg->FindInt32("sortmode", i, &temp) == B_NO_ERROR) ? (CLVSortMode)temp : NoSort;
-            numSortKeys++;
-         }
-         if (numSortKeys > 0) _resultsView->SetSorting(numSortKeys, sortKeys, sortModes);
-         delete [] sortKeys;
-         delete [] sortModes;
-      }
       break;
 
       case PrivateChatWindow::PRIVATE_WINDOW_CLOSED:
@@ -3427,7 +3028,7 @@ void ShareWindow :: MessageReceived(BMessage * msg)
          // Update our advertised "supports_ssl" capability (re-publishes the name node).
          if (NetClient()) NetClient()->SetRequireTLS(_requireTLS->IsMarked());
 #endif
-         // else: TLS is hidden/disabled for 1.0 (crash on the SSL client path) — ignore.
+         // else: TLS is hidden/disabled for 1.0 (crash on the SSL client path) Ã¢â‚¬â€ ignore.
       break;
 
       case BESHARE_PORT_MAP_REPORT:
@@ -3448,8 +3049,8 @@ void ShareWindow :: MessageReceived(BMessage * msg)
 
          if (isReachReport)
          {
-            // External-reachability verdict from the probe: mark the title with ✓ (reachable)
-            // or ✗ (behind NAT / unreachable), show the real public IP, and notify.
+            // External-reachability verdict from the probe: mark the title with Ã¢Å“â€œ (reachable)
+            // or Ã¢Å“â€” (behind NAT / unreachable), show the real public IP, and notify.
             const char * netIP = NULL;
             int32 rport = 0;
             (void) msg->FindString("internet_ip", &netIP);
@@ -3458,7 +3059,7 @@ void ShareWindow :: MessageReceived(BMessage * msg)
             if (reachable != -1)
             {
                char rbuf[112];
-               const char * rmark = (reachable == 1) ? " \xE2\x9C\x93" : " \xE2\x9C\x97";  // U+2713 ✓ / U+2717 ✗
+               const char * rmark = (reachable == 1) ? " \xE2\x9C\x93" : " \xE2\x9C\x97";  // U+2713 Ã¢Å“â€œ / U+2717 Ã¢Å“â€”
                if ((netIP)&&(netIP[0])&&(rport > 0)) snprintf(rbuf, sizeof(rbuf), "%s:%ld%s", netIP, (long)rport, rmark);
                else if ((netIP)&&(netIP[0]))         snprintf(rbuf, sizeof(rbuf), "%s%s", netIP, rmark);
                else                                   snprintf(rbuf, sizeof(rbuf), "port %ld%s", (long)rport, rmark);
@@ -3471,7 +3072,7 @@ void ShareWindow :: MessageReceived(BMessage * msg)
                                               : "Reachability unknown",
                              text ? text : "");
 
-            // The reachability probe — NOT the mere presence of a router mapping — is
+            // The reachability probe Ã¢â‚¬â€ NOT the mere presence of a router mapping Ã¢â‚¬â€ is
             // the real test of whether peers can connect to us directly.  A mapping
             // can "succeed" on the router yet leave us unreachable behind CGNAT, so
             // let the verdict drive the auto-managed "I'm Firewalled" flag: reachable
@@ -3488,7 +3089,7 @@ void ShareWindow :: MessageReceived(BMessage * msg)
                   _mapperClearedFirewalled = (wantFirewalled == false);
                   LogMessage(wantFirewalled ? LOG_WARNING_MESSAGE : LOG_INFORMATION_MESSAGE,
                      wantFirewalled
-                       ? "Enabled \"I'm Firewalled\" automatically: you are not reachable from the internet (NAT/CGNAT), so others can't connect to you directly — firewalled mode lets non-firewalled peers still download from you."
+                       ? "Enabled \"I'm Firewalled\" automatically: you are not reachable from the internet (NAT/CGNAT), so others can't connect to you directly Ã¢â‚¬â€ firewalled mode lets non-firewalled peers still download from you."
                        : "Disabled \"I'm Firewalled\" automatically: you are reachable from the internet, so others can download from you directly.");
                }
             }
@@ -3909,9 +3510,9 @@ void ShareWindow :: MessageReceived(BMessage * msg)
       case SHAREWINDOW_COMMAND_BEGIN_DOWNLOADS:
       {
          BMessage filelistMsg;
-         int32 nextIndex;
-         for (int32 i=0; ((nextIndex =_resultsView->CurrentSelection(i)) >= 0); i++)
-            filelistMsg.AddPointer("item", _resultsView->ItemAt(nextIndex));
+         BRow * row = NULL;
+         while ((row = _resultsView->CurrentSelection(row)) != NULL)
+            filelistMsg.AddPointer("item", row);
          RequestDownloads(filelistMsg, _downloadsDir, NULL);
          _resultsView->DeselectAll();
          UpdateDownloadButtonStatus();
@@ -3946,8 +3547,8 @@ void ShareWindow :: MessageReceived(BMessage * msg)
          char temp[512];
          snprintf(temp, sizeof(temp),
             "HiShare v%s\n\n"
-            "It all started as an update to BeShare 3.04 — the classic\n"
-            "MUSCLE file-sharing & chat client — modernized for Haiku.\n\n"
+            "It all started as an update to BeShare 3.04 Ã¢â‚¬â€ the classic\n"
+            "MUSCLE file-sharing & chat client Ã¢â‚¬â€ modernized for Haiku.\n\n"
             "Original BeShare by Jeremy Friesner & Vitaliy Mikitchenko.\n"
             "Haiku modernization by atomozero.\n"
             "https://github.com/atomozero/HiShare\n\n"
@@ -4025,40 +3626,6 @@ void ShareWindow :: MessageReceived(BMessage * msg)
          SetQueryEnabled(false);
       break;
 
-      case SHAREWINDOW_COMMAND_TOGGLE_COLUMN:
-      {
-         const char * attrName;
-         if (msg->FindString("attrib", &attrName) == B_NO_ERROR)
-         {
-            BMenuItem * mi;
-            if (_attribMenuItems.Get(attrName, mi) == B_NO_ERROR)
-            {
-               mi->SetMarked(!mi->IsMarked());
-               ShareColumn * sc;
-               if (_columns.Get(attrName, sc) == B_NO_ERROR)
-               {
-                  float newWidth;
-                  if (msg->FindFloat("width", &newWidth) == B_NO_ERROR) sc->SetWidth(newWidth);
-
-                  bool isVisible = (_resultsView->IndexOfColumn(sc) >= 0);
-                  if ((isVisible)&&(mi->IsMarked() == false)) 
-                  {
-                     _activeAttribs.Remove(sc->GetAttributeName());
-                     _resultsView->RemoveColumn(sc);
-                  }
-                  else if ((isVisible == false)&&(mi->IsMarked())) 
-                  {
-                     float w = DEFAULT_COLUMN_WIDTH;
-                     if (_activeAttribs.Get(sc->GetAttributeName(), w) == B_NO_ERROR) sc->SetWidth(w);
-                                                                                 else _activeAttribs.Put(sc->GetAttributeName(), sc->Width());
-                     _resultsView->AddColumn(sc);
-                  }
-               }
-            }
-         }
-      }
-      break;
-
       case SHAREWINDOW_COMMAND_AUTO_RECONNECT:
       {
          // The runner message is tagged with the connID of the connection to retry.
@@ -4090,9 +3657,9 @@ void ShareWindow :: MessageReceived(BMessage * msg)
        case SHAREWINDOW_COMMAND_REQUEST_INFO:
       {
         BMessage filelistMsg;
-        int32 nextIndex;
-        for (int32 i=0; ((nextIndex =_resultsView->CurrentSelection(i)) >= 0); i++)
-            filelistMsg.AddPointer("item", _resultsView->ItemAt(nextIndex));
+        BRow * row = NULL;
+        while ((row = _resultsView->CurrentSelection(row)) != NULL)
+            filelistMsg.AddPointer("item", row);
         RemoteInfo::ShowInfo(filelistMsg);
       }
       break;
@@ -4118,8 +3685,6 @@ void ShareWindow :: UpdateColors()
    UpdateTextViewColors(_userNameEntry->TextView());
    UpdateTextViewColors(_userStatusEntry->TextView());
    UpdateTextViewColors(_fileNameQueryEntry->TextView());
-
-   UpdateColumnListViewColors(_resultsView);
 
    UpdatePrivateChatWindowsColors();
    RefreshTransfersFor(NULL);
@@ -4171,7 +3736,7 @@ void ShareWindow :: UpdaterCommandReceived(const char * key, const char * value)
       if (strcmp(key, "version") == 0)
       {
          // The server's "version" broadcast announces the latest *BeShare* release,
-         // which is unrelated to HiShare's own version line — comparing them would
+         // which is unrelated to HiShare's own version line Ã¢â‚¬â€ comparing them would
          // nag HiShare users to "upgrade" to a BeShare build.  HiShare 1.0 has no
          // update channel yet, so ignore this key.  (void)IsVersionNewer keeps the
          // helper referenced for when HiShare gets its own update feed.
@@ -4464,7 +4029,7 @@ void
 ShareWindow ::
 UpdateTitleBar()
 {
-   // The title bar shows only the program name — connection state, results count,
+   // The title bar shows only the program name Ã¢â‚¬â€ connection state, results count,
    // shared-file count and the public/reachability address all live in the header
    // banner now.  A user-set custom window title still takes precedence.
    const String & custom = GetCustomWindowTitle();
@@ -4486,7 +4051,7 @@ UpdateTitleBar()
          {
             if (tip.Length() > 0) tip += "\n";
             tip += c->GetServerName();
-            tip += c->IsConnected() ? "  \xE2\x9C\x93" : (c->IsConnecting() ? "  \xE2\x80\xA6" : "  \xE2\x9C\x97");  // ✓ / … / ✗
+            tip += c->IsConnected() ? "  \xE2\x9C\x93" : (c->IsConnecting() ? "  \xE2\x80\xA6" : "  \xE2\x9C\x97");  // Ã¢Å“â€œ / Ã¢â‚¬Â¦ / Ã¢Å“â€”
          }
       }
 
@@ -4515,16 +4080,13 @@ UpdateTitleBar()
    if (_connectToolButton)
       _connectToolButton->SetConnected(IsConnected() || IsConnecting(),
                                        (IsConnected() || IsConnecting()) ? "Disconnect" : "Connect");
-
-   UpdatePagingButtons();
 }
 
 void
 ShareWindow ::
 UpdateDownloadButtonStatus()
 {
-   _requestDownloadsButton->SetEnabled((IsConnected())&&(_resultsView->CurrentSelection() >= 0));
-   _requestInfoButton->SetEnabled((IsConnected())&&(_resultsView->CurrentSelection() >= 0));
+   _requestDownloadsButton->SetEnabled((IsConnected())&&(_resultsView->CurrentSelection() != NULL));
 
    bool deadTransfersPresent = false;
    for (int i=_transferList->CountItems()-1; i>=0; i--)
@@ -4740,16 +4302,6 @@ UpdateServerColumnVisibility()
       BColumn * col = _usersView->ColumnAt(7);
       if (col) col->SetVisible(multi);
    }
-
-   // Results list: flip the attribute column through the standard toggle path,
-   // so the Attributes menu item and saved settings stay consistent.
-   BMenuItem * mi;
-   if ((_attribMenuItems.Get(FILE_OWNER_SERVER_NAME, mi) == B_NO_ERROR)&&(mi->IsMarked() != multi))
-   {
-      BMessage tmsg(SHAREWINDOW_COMMAND_TOGGLE_COLUMN);
-      tmsg.AddString("attrib", FILE_OWNER_SERVER_NAME);
-      PostMessage(&tmsg);
-   }
 }
 
 void
@@ -4936,12 +4488,15 @@ void
 ShareWindow ::
 DownloadAllResults()
 {
-   int32 numItems = _resultsView->CountItems();
-   if (numItems > 0)
+   BMessage filelistMsg;
+   for (int32 i = 0; ; i++)
    {
-      _resultsView->Select(0, numItems-1);
-      PostMessage(SHAREWINDOW_COMMAND_BEGIN_DOWNLOADS);
+      BRow * row = _resultsView->RowAt(i);
+      if (row == NULL) break;
+      filelistMsg.AddPointer("item", row);
    }
+   if (filelistMsg.HasPointer("item", 0))
+      RequestDownloads(filelistMsg, _downloadsDir, NULL);
 }
 
 void 
@@ -4957,11 +4512,6 @@ void
 ShareWindow ::
 ClearResults()
 {
-   _resultsView->MakeEmpty();  // for efficiency
-   for (int i=_resultsPages.GetNumItems()-1; i>=0; i--) delete _resultsPages[i];
-   _resultsPages.Clear();
-   SwitchToPage(0);
-      
    HashtableIterator<const char *, RemoteUserItem *> iter = _users.GetIterator();
    RemoteUserItem * next;
    while(iter.GetNextValue(next) == B_NO_ERROR) next->ClearFiles();
@@ -4989,47 +4539,7 @@ void
 ShareWindow ::
 EndBatchFileResultUpdate()
 {
-   int tempSize = _tempAddList.CountItems();
-   if (tempSize > 0)
-   {
-      BList addToDisplay;
-
-      uint32 addPage = 0;
-      for (int i=0; i<tempSize; i++)
-      {
-         if (addPage >= _resultsPages.GetNumItems()) _resultsPages.AddTail(new Hashtable<RemoteFileItem *, bool>);
-         Hashtable<RemoteFileItem *, bool> * table = _resultsPages[addPage];
-         if (table->GetNumItems() >= _pageSize)
-         {
-            addPage++;  // allocate a new page on the next loop-through
-            i--;        // then do this same item again
-         }
-         else
-         {
-            RemoteFileItem * nextItem = (RemoteFileItem *) _tempAddList.ItemAt(i);
-            table->Put(nextItem, nextItem);
-            if (addPage == _currentPage) addToDisplay.AddItem(nextItem);
-         }
-      }
-
-      AddResultsItemList(addToDisplay);
-      UpdateTitleBar();
-      _tempAddList.MakeEmpty();
-   }
-}
-
-
-void
-ShareWindow ::
-AddResultsItemList(const BList & list)
-{
-   if (list.CountItems() > 0)
-   {
-      DisableUpdates();
-         _resultsView->AddList((BList *)&list);
-         SortResults();
-      EnableUpdates();
-   }
+   // empty - items are added directly in AddFileItem
 }
 
 void
@@ -5062,148 +4572,24 @@ FileTransferDisconnected(ShareFileTransfer * who)
 }
 
 
-const char * 
-ShareWindow ::
-GetFileCellText(const RemoteFileItem * item, int32 columnIndex) const
-{
-   return ((ShareColumn *)_resultsView->ColumnAt(columnIndex))->GetFileCellText(item);
-}
-
-const BBitmap *
-ShareWindow ::
-GetBitmap(const RemoteFileItem * item, int32 /*columnIndex*/) const
-{
-   const BBitmap * bmp = NULL;
-
-   // if the item supplies one, return it
-   if ((bmp = ((RemoteFileItem *)item)->GetIcon()) != NULL) return bmp;
-   
-   // Formerly, the only bitmap supported was the MIME type icon
-   const char * mimeString;
-   if (item->GetAttributes().FindString("beshare:Kind", &mimeString) == B_NO_ERROR)
-   {
-      ShareMIMEInfo * mi;
-      if (_mimeInfos.Get(mimeString, mi) == B_NO_ERROR) bmp = mi->GetIcon();
-   }
-   return bmp ? bmp : &_defaultBitmap;
-}
-
 const BBitmap *
 ShareWindow ::
 GetBitmap(const char * mimeString)
 {
-   ShareMIMEInfo * mi = mimeString ? CacheMIMETypeInfo(mimeString) : NULL;
-   const BBitmap * bmp = mi ? mi->GetIcon() : NULL;
-   return bmp ? bmp : &_defaultBitmap;
-}
-
-ShareMIMEInfo *
-ShareWindow ::
-CacheMIMETypeInfo(const char * mimeString)
-{
-   ShareMIMEInfo * ret;
-   if (_mimeInfos.Get(mimeString, ret) == B_ERROR)
-   {
-      const char * label = mimeString;
-      char buf[B_MIME_TYPE_LENGTH];
-      BMimeType mt(mimeString);
-      if ((mt.InitCheck()==B_NO_ERROR)&&(mt.GetShortDescription(buf) == B_NO_ERROR)) label = buf;
-
-      ShareMIMEInfo * newInfo = new ShareMIMEInfo(label, mimeString);
-      _mimeInfos.Put(newInfo->GetMIMEString(), newInfo);
-      _emptyMimeInfos.Put(newInfo, true);   // because it's not in the menu yet (it goes there when we have something to put in it)
-      ret = newInfo;
-   }
-   return ret;
+   (void) mimeString;
+   return &_defaultBitmap;
 }
 
 void
 ShareWindow :: 
 AddFileItem(RemoteFileItem * item)
 {
-   MASSERT(item, "AddFileItem:  no item!?");
-   _tempAddList.AddItem(item);
-
-   const Message & attrs = item->GetAttributes();
-   ShareMIMEInfo * optMimeInfo = NULL;
-   const char * mimeString = NULL;
-   if (attrs.FindString("beshare:Kind", &mimeString) == B_NO_ERROR) optMimeInfo = CacheMIMETypeInfo(mimeString);
-
    int64 s;
-   if (attrs.FindInt64("beshare:File Size", &s) == B_NO_ERROR) _bytesShown += s;
-
-   MessageFieldNameIterator iter = attrs.GetFieldNameIterator();
-   const String * next;
-   while((next = iter.GetNextFieldName()) != NULL) CreateColumn(optMimeInfo, next->Cstr(), true);
+   if (item->GetAttributes().FindInt64("beshare:File Size", &s) == B_NO_ERROR) _bytesShown += s;
+   _resultsView->AddRow(item);
+   UpdateTitleBar();
 }
 
-
-
-void
-ShareWindow ::
-CreateColumn(ShareMIMEInfo * optMimeInfo, const char * attrName, bool remote)
-{
-   if (_columns.ContainsKey(attrName) == false) 
-   {
-      const char * label = attrName;
-      int type = ShareColumn::ATTR_MISC;
-
-      if ((remote == false)&&(attrName[0] == SPECIAL_COLUMN_CHAR))
-      {
-         type = attrName[1]-'0';
-         label += 2;
-      }
-      else
-      {
-         if (strncmp(attrName, "besharez:", 9) == 0) return; //ignore this attribute
-         if (strncmp(attrName, "beshare:", 8) == 0)
-         {
-            // A BeShare var; handle these a bit differently  
-            label += 8;
-                 if (strcmp(label, "Kind")     ==0) label = str(STR_KIND);       // hacked-in language support :^P
-            else if (strcmp(label, "File Size")==0) label = str(STR_FILE_SIZE);
-            else if (strcmp(label, "Modification Time")==0) label = str(STR_MODIFICATION_TIME);
-            else if (strcmp(label, "Path")==0)    label = str(STR_PATH);
-            optMimeInfo = NULL;   // these vars are not type specific
-         }
-         else
-         {
-            // It's a genuine attribute; try to find a better name for it
-            if (optMimeInfo) 
-            {
-               const char * desc = optMimeInfo->GetAttributeDescription(attrName);
-               if (desc) label = desc;
-            }
-         }
-      }
-
-      ShareColumn * column = new ShareColumn(type, attrName, label, 80.0f);
-      _columns.Put(column->GetAttributeName(), column);
-
-      BMessage * msg = new BMessage(SHAREWINDOW_COMMAND_TOGGLE_COLUMN);
-      msg->AddString("attrib", column->GetAttributeName());
-      BMenuItem * mi = new BMenuItem(column->GetLabel(), msg, 0);
-
-      if (optMimeInfo) 
-      {
-         if (_emptyMimeInfos.ContainsKey(optMimeInfo))
-         {
-            if (_firstUserDefinedAttribute)
-            {
-               _attribMenu->AddSeparatorItem();
-               _firstUserDefinedAttribute = false;
-            }
-            _attribMenu->AddItem(optMimeInfo);    // only add it to our menu when it finally gets something to hold
-            _emptyMimeInfos.Remove(optMimeInfo);  // now the BMenu is responsible for deleting it
-         }
-         optMimeInfo->AddItem(mi);
-      }
-      else _attribMenu->AddItem(mi);
-
-      _attribMenuItems.Put(column->GetAttributeName(), mi);
-      if (_activeAttribs.ContainsKey(attrName)) PostMessage(msg);
-   }
-}
 
 
 void
@@ -5211,70 +4597,24 @@ ShareWindow :: RemoveFileItem(RemoteFileItem * item)
 {
    int64 s;
    if (item->GetAttributes().FindInt64("beshare:File Size", &s) == B_NO_ERROR) _bytesShown -= s;
-
-   for (int i=_resultsPages.GetNumItems()-1; i>=0; i--)
-   {
-      Hashtable<RemoteFileItem *, bool> * nextTable = _resultsPages[i];
-      if (nextTable->Remove(item) == B_NO_ERROR)
-      {
-         if (i == (int)_currentPage) _resultsView->RemoveItem(item);
-         if (nextTable->GetNumItems() == 0)
-         { 
-            _resultsPages.RemoveItemAt(i);
-            delete nextTable;
-                 if (i < (int)_currentPage) _currentPage--;
-            else if (i == (int)_currentPage) SwitchToPage(((int)_currentPage)-1);
-         }
-         break;
-      }
-   }
+   _resultsView->RemoveRow(item);
+   UpdateTitleBar();
 }
 
 void
 ShareWindow ::
-SwitchToPage(int page)
+RefreshFileItem(RemoteFileItem * item)
 {
-   int numPages = _resultsPages.GetNumItems();
-   if (page >= numPages) page = numPages-1;
-   if (page < 0) page = 0;
-   _currentPage = (uint32) page;
-
-   _resultsView->MakeEmpty();
-
-   if (numPages > 0)
-   {
-      Hashtable<RemoteFileItem *, bool> * table = _resultsPages[page];
-      HashtableIterator<RemoteFileItem *, bool> iter = table->GetIterator();
-      RemoteFileItem * next;
-      BList tempList(table->GetNumItems());
-      while(iter.GetNextKey(next) == B_NO_ERROR) tempList.AddItem(next);
-      AddResultsItemList(tempList);
-   }
-   UpdateTitleBar();
+   item->UpdateFields();
+   _resultsView->UpdateRow(item);
 }
 
 void
 ShareWindow ::
 RefreshTransferItem(ShareFileTransfer * item)
 {
-   // Gotta call DrawItem() directly, since InvalidateItem() causes flicker
    item->DrawItem(_transferList, _transferList->ItemFrame(_transferList->IndexOf(item)), true);
    _transferList->Flush();
-}
-
-
-void
-ShareWindow ::
-RefreshFileItem(RemoteFileItem * item)
-{
-   for (int i=_resultsPages.GetNumItems()-1; i>=0; i--)
-   {
-      if (_resultsPages[i]->ContainsKey(item))
-      {
-         if (i == (int)_currentPage) _resultsView->InvalidateItem(_resultsView->IndexOf(item));
-         break;
-      }
-   }
 }
 
 void
@@ -5297,21 +4637,6 @@ RefreshTransfersFor(RemoteUserItem * user)
          RefreshTransferItem(next);
       }
    }
-}
-
-
-int
-ShareWindow ::
-CompareFunc(const CLVListItem* item1, const CLVListItem* item2, int32 sortKey)
-{
-   return ((RemoteFileItem *)item1)->Compare(((RemoteFileItem *)item2), sortKey);  
-}
-
-int 
-ShareWindow ::
-Compare(const RemoteFileItem * rf1, const RemoteFileItem * rf2, int32 sortKey) const
-{
-   return ((const ShareColumn *)_resultsView->ColumnAt(sortKey))->Compare(rf1, rf2);
 }
 
 
@@ -6081,82 +5406,8 @@ void
 ShareWindow ::
 SetQueryInProgress(ServerConnection * conn, bool qp)
 {
-   (void) conn;  // phase 1: threaded through; aggregate query state handling comes later
-   if (qp != (_queryInProgressRunner != NULL))
-   {
-      if (qp)
-      {
-         BMessenger toMe(this);
-         _queryInProgressRunner = new BMessageRunner(toMe, new BMessage(SHAREWINDOW_COMMAND_QUERY_IN_PROGRESS_ANIM), 100000LL); //  10fps
-      }
-      else 
-      {
-         delete _queryInProgressRunner;
-         _queryInProgressRunner = NULL;
-         DrawQueryInProgress(false);
-      }
-   }
-}
-
-void
-ShareWindow ::
-SortResults()
-{
-   _resultsView->SortItems();
-}
-
-void
-ShareWindow ::
-DrawQueryInProgress(bool inProgress)
-{
-   BView * clv = _resultsView->GetColumnLabelView();
-
-   BRect radarBounds(clv->Bounds());
-   radarBounds.right = 19.0f;
-   radarBounds.InsetBy(2,2);
-
-   BPoint center((radarBounds.left+radarBounds.right)/2.0f, ((radarBounds.top+radarBounds.bottom)/2.0f)-1.0f);
-   BPoint radius(center.x-radarBounds.left, center.y-radarBounds.top);
-
-   // draw dee leetle radar screen, doop de doop de doo
-   if (inProgress)
-   {
-      if (_lastInProgress != inProgress)
-      {
-         clv->SetHighColor(0,0,0);
-         clv->FillEllipse(center, radius.x, radius.y, B_SOLID_HIGH);
-         clv->SetHighColor(ui_color(B_PANEL_TEXT_COLOR));  // outline must contrast with the themed header
-         clv->StrokeEllipse(center, radius.x, radius.y, B_SOLID_HIGH);
-      }
-      rgb_color color = {0, 0, 0, 255};  // BeBackgroundGrey;
-      const float diff = 30.0f;
-      const float total = 180.0f;
-      radius.x -= 1.0f;  // don't overdraw the outline!
-      radius.y -= 1.0f;
-      for (float a=_radarSweep; a>_radarSweep-total; a-=diff)
-      {
-         clv->SetHighColor(color);
-         clv->FillArc(center, radius.x, radius.y, a, diff);
-         color.green = (uint8)(((float)color.green*0.7f)+(255.0f*0.3f));
-      }
-      _radarSweep -= diff/2.0f;
-   }
-   else 
-   {
-      clv->FillEllipse(center, radius.x, radius.y, B_SOLID_LOW);
-      _radarSweep = 0.0f;
-   }
-
-   _lastInProgress = inProgress;
-}
-
-
-void 
-ShareWindow :: UpdatePagingButtons()
-{
-   uint32 numPages = _resultsPages.GetNumItems();
-   _prevPageButton->SetEnabled((numPages > 1)&&(_currentPage > 0));
-   _nextPageButton->SetEnabled((numPages > 1)&&(_currentPage < numPages-1));
+   (void) conn;
+   (void) qp;
 }
 
 void
