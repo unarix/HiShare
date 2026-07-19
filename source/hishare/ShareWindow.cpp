@@ -1769,12 +1769,26 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          upperView->AddChild(_statusView);
          float extraMenuWidth = _statusView->StringWidth("MMM");
 
+         // Distribute Server / UserName / Status evenly across the available width.
+         const float totalWidth = statusViewFrame.Width();
+         const float gap = 6.0f;   // spacing between groups
+         const float colW = (totalWidth - gap * 2.0f) / 3.0f; // each group gets 1/3
+
+         // Use the system preferred height for BMenuField / BTextControl so they
+         // render at the same size and align properly in any font/theme.
+         float prefW, prefH;
+         BMenuField probe(BRect(0,0,1,1), NULL, NULL, new BMenu("X"));
+         probe.GetPreferredSize(&prefW, &prefH);
+         const float ctrlH = prefH;  // native height for both menus and text controls
+         const float cy = floorf((statusViewFrame.Height() - ctrlH) / 2.0f); // vertically center
+
          {
-            // Fill out the Server menu and text control
+            // --- Server group (1st third) ---
+            float x0 = 0.0f;
             float serverMenuWidth = _statusView->StringWidth(str(STR_SERVER))+extraMenuWidth;
             _serverMenu = new BMenu(str(STR_SERVER));
             _statusView->AddChild(AddBorderView(_serverMenuField =
-                 new BMenuField(BRect(0,4,serverMenuWidth,statusViewFrame.Height()), NULL, NULL, _serverMenu)));
+                 new BMenuField(BRect(x0, cy, x0+serverMenuWidth, cy+ctrlH), NULL, NULL, _serverMenu)));
 
             const char * firstName = NULL;
             const char * sn = NULL;
@@ -1791,8 +1805,8 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
 
             if (settingsMsg.FindString("server", &sn) == B_NO_ERROR) firstName = sn;
             _serverEntry = new BTextControl(
-                BRect(serverMenuWidth, 6, STATUS_VIEW_WIDTH-(USER_ENTRY_WIDTH+USER_STATUS_WIDTH+hMargin),
-                 statusViewFrame.Height()), NULL, NULL, firstName,
+                BRect(x0+serverMenuWidth, cy, x0+colW, cy+ctrlH),
+                 NULL, NULL, firstName,
                   new BMessage(SHAREWINDOW_COMMAND_USER_CHANGED_SERVER));
             AddBorderView(_serverEntry);
             _serverEntry->SetTarget(toMe);
@@ -1801,12 +1815,12 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          }
 
          {
-            // Fill out the UserName menu and text control
+            // --- User Name group (2nd third) ---
+            float x0 = colW + gap;
             float userNameMenuWidth = _statusView->StringWidth(str(STR_USER_NAME_COLON))+extraMenuWidth;
-            float userNameMenuLeft = STATUS_VIEW_WIDTH-(USER_ENTRY_WIDTH+USER_STATUS_WIDTH);
             _userNameMenu = new BMenu(str(STR_USER_NAME_COLON));
             _statusView->AddChild(AddBorderView(new BMenuField(
-                BRect(userNameMenuLeft,4,userNameMenuLeft+userNameMenuWidth,statusViewFrame.Height()),
+                BRect(x0, cy, x0+userNameMenuWidth, cy+ctrlH),
                  NULL, NULL, _userNameMenu)));
 
             const char * un = NULL;
@@ -1822,8 +1836,8 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
             NetClient()->SetLocalUserName(un);
 
             _userNameEntry = new BTextControl(
-                BRect(userNameMenuLeft+userNameMenuWidth,6,STATUS_VIEW_WIDTH-(USER_STATUS_WIDTH+1),
-                 statusViewFrame.Height()), NULL, NULL, un, new BMessage(SHAREWINDOW_COMMAND_USER_CHANGED_NAME));
+                BRect(x0+userNameMenuWidth, cy, x0+colW, cy+ctrlH),
+                 NULL, NULL, un, new BMessage(SHAREWINDOW_COMMAND_USER_CHANGED_NAME));
             AddBorderView(_userNameEntry);
             _userNameEntry->SetTarget(toMe);
          
@@ -1831,14 +1845,14 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
          }
 
          {
-            // Fill out the UserStatus menu and text control
+            // --- Status group (3rd third) ---
+            float x0 = (colW + gap) * 2.0f;
             String statusColon = str(STR_STATUS);
             statusColon += ':';
             float userStatusMenuWidth = _statusView->StringWidth(statusColon())+extraMenuWidth;
-            float userStatusMenuLeft = hMargin+(STATUS_VIEW_WIDTH-USER_STATUS_WIDTH);
             _userStatusMenu = new BMenu(statusColon());
             _statusView->AddChild(AddBorderView(new BMenuField(
-                BRect(userStatusMenuLeft,4,userStatusMenuLeft+userStatusMenuWidth,statusViewFrame.Height()),
+                BRect(x0, cy, x0+userStatusMenuWidth, cy+ctrlH),
                  NULL, NULL, _userStatusMenu)));
 
             const char * us = NULL;
@@ -1859,7 +1873,7 @@ ShareWindow :: ShareWindow(uint64 installID, BMessage & settingsMsg, const char 
             NetClient()->SetLocalUserStatus(us);
 
             _userStatusEntry = new BTextControl(
-             BRect(userStatusMenuLeft+userStatusMenuWidth,6,STATUS_VIEW_WIDTH-1,statusViewFrame.Height()),
+             BRect(x0+userStatusMenuWidth, cy, x0+colW, cy+ctrlH),
               NULL, NULL, us, new BMessage(SHAREWINDOW_COMMAND_USER_CHANGED_STATUS));
             AddBorderView(_userStatusEntry);
             _userStatusEntry->SetTarget(toMe);
