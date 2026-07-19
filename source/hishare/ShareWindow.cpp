@@ -24,6 +24,7 @@
 #include <interface/Input.h>
 #include <interface/PopUpMenu.h>
 #include <interface/Bitmap.h>
+#include <interface/ListView.h>
 #include <IconUtils.h>
 
 #include <storage/File.h>
@@ -2307,7 +2308,8 @@ RequestDownloads(const BMessage & filelistMsg, const BDirectory & downloadDir, B
       if (SetupNewDownload(*(iter.GetNextKey()), nextXfer, false) == B_NO_ERROR)
       {
          _transferList->AddItem(nextXfer);
-         _transferList->ScrollTo(0, 999999.0f);  // scroll to the bottom
+         _transferList->ScrollTo(0, 999999.0f);
+         RefreshTransferItem(nextXfer);
       }
       else
       {
