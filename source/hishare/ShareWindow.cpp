@@ -2307,7 +2307,6 @@ RequestDownloads(const BMessage & filelistMsg, const BDirectory & downloadDir, B
       if (SetupNewDownload(*(iter.GetNextKey()), nextXfer, false) == B_NO_ERROR)
       {
          _transferList->AddItem(nextXfer);
-         _transferList->Invalidate();
          _transferList->ScrollTo(0, 999999.0f);  // scroll to the bottom
       }
       else
@@ -3514,20 +3513,8 @@ void ShareWindow :: MessageReceived(BMessage * msg)
          BRow * row = NULL;
          while ((row = _resultsView->CurrentSelection(row)) != NULL)
             filelistMsg.AddPointer("item", row);
-         if (!filelistMsg.HasPointer("item", 0))
-         {
-            int32 idx;
-            for (int32 i = 0; msg->FindInt32("index", i, &idx) == B_NO_ERROR; i++)
-            {
-               BRow * r = _resultsView->RowAt(idx);
-               if (r) filelistMsg.AddPointer("item", r);
-            }
-         }
-         if (filelistMsg.HasPointer("item", 0))
-         {
-            RequestDownloads(filelistMsg, _downloadsDir, NULL);
-            _resultsView->DeselectAll();
-         }
+         RequestDownloads(filelistMsg, _downloadsDir, NULL);
+         _resultsView->DeselectAll();
          UpdateDownloadButtonStatus();
       }
       break;
@@ -4628,12 +4615,8 @@ void
 ShareWindow ::
 RefreshTransferItem(ShareFileTransfer * item)
 {
-   int32 idx = _transferList->IndexOf(item);
-   if (idx >= 0)
-   {
-      item->DrawItem(_transferList, _transferList->ItemFrame(idx), true);
-      _transferList->Flush();
-   }
+   item->DrawItem(_transferList, _transferList->ItemFrame(_transferList->IndexOf(item)), true);
+   _transferList->Flush();
 }
 
 void
