@@ -2307,6 +2307,7 @@ RequestDownloads(const BMessage & filelistMsg, const BDirectory & downloadDir, B
       if (SetupNewDownload(*(iter.GetNextKey()), nextXfer, false) == B_NO_ERROR)
       {
          _transferList->AddItem(nextXfer);
+         _transferList->Invalidate();
          _transferList->ScrollTo(0, 999999.0f);  // scroll to the bottom
       }
       else
@@ -4627,8 +4628,8 @@ void
 ShareWindow ::
 RefreshTransferItem(ShareFileTransfer * item)
 {
-   item->DrawItem(_transferList, _transferList->ItemFrame(_transferList->IndexOf(item)), true);
-   _transferList->Flush();
+   int32 idx = _transferList->IndexOf(item);
+   if (idx >= 0) _transferList->InvalidateItem(idx);
 }
 
 void
