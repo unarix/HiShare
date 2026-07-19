@@ -110,7 +110,7 @@ else # not beos
       ifeq ($(shell uname -m),x86_64)
          CXXFLAGS += -DMUSCLE_64_BIT_PLATFORM
       endif
-      LIBS = -lbe -lnetwork -lbnetapi -lroot -ltranslation -lmedia -lcolumnlistview -lshared $(SSL_LIBS)
+      LIBS = -lbe -lnetwork -lbnetapi -lroot -ltranslation -lmedia $(SSL_LIBS)
     else
         ifneq (,$(findstring g++,$(CXX)))
           # not using g++ don't need $GCCFLAGS
@@ -157,7 +157,7 @@ HiShare : PortMapper.o ReflowingTextView.o ShareNetClient.o ServerConnection.o S
           ByteBuffer.o ZLibCodec.o ZLibUtilityFunctions.o \
           $(SSL_OBJS) ShareSettingsWindow.o \
           $(SANTAOBJS) $(REGEXOBJS) $(ZLIBOBJS)
-	$(CXX) $(LIBS) $(LFLAGS) -o $@ $^ -llocalestub
+	$(CXX) $(LIBS) $(LFLAGS) -o $@ $^ -llocalestub -lcolumnlistview -lshared
 	xres -o $@ $(RESOURCE)
 	# Embed the English (development) message catalog so the Haiku Locale Kit knows our
 	# signature+fingerprint; str() bridges to it and falls back to the built-in string
