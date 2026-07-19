@@ -2422,11 +2422,14 @@ void
 ShareWindow ::
 ClearUsers()
 {
-   ClearResults();             // no users means no files available
-   _usersView->Clear();
+   ClearResults();
    HashtableIterator<const char *, RemoteUserItem *> iter = _users.GetIterator();
    RemoteUserItem * next;
-   while(iter.GetNextValue(next) == B_NO_ERROR) delete next;
+   while(iter.GetNextValue(next) == B_NO_ERROR)
+   {
+      _usersView->RemoveRow(next);
+      delete next;
+   }
    _users.Clear();
 
    BMessage msg(PrivateChatWindow::PRIVATE_WINDOW_REMOVE_USER);
